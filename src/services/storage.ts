@@ -15,8 +15,8 @@ import {
   type Attachment, type AttachmentMeta, attachments,
   type InternalNote, type InsertInternalNote, internalNotes,
   type OrderSheetItem, orderSheetItems,
-} from "../shared/schema.js";
-import { db } from "../lib/db.js";
+} from "../db/schema.js";
+import { db } from "../db/client.js";
 import {
   type DbExecutor,
   deleteManyWhere,
@@ -27,7 +27,7 @@ import {
   toValidDate,
   updateOneById,
   updateOneWhere,
-} from "../lib/db-helpers.js";
+} from "../db/helpers.js";
 import { eq, ne, and, or, asc, desc, inArray, isNull, sql } from "drizzle-orm";
 
 function normalizeInvoiceLineItems(value: unknown): InvoiceLineItemSnapshot[] {

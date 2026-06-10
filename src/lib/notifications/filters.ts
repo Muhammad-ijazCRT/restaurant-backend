@@ -1,4 +1,4 @@
-import type { ActivityLog } from "../shared/schema.js";
+import type { ActivityLog } from "../../db/schema.js";
 
 export type VendorEmployeeNotificationRole = "warehouse_worker" | "driver";
 

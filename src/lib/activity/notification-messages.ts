@@ -1,4 +1,4 @@
-import { requestContext } from "./async-context";
+import { requestContext } from "../async-context.js";
 
 export interface ActivityActor {
   id: string;

@@ -1,4 +1,4 @@
-import { db } from "../lib/db.js";
+import { db } from "../../db/client.js";
 import {
   users,
   vendors,
@@ -8,11 +8,11 @@ import {
   activityLogs,
   orders,
   notificationClearances,
-} from "../shared/schema.js";
+} from "../../db/schema.js";
 import {
   buildNotificationViewerKey,
   countUnreadNotifications,
-} from "../lib/notification-clearance.js";
+} from "../../lib/notifications/clearance.js";
 import { desc, eq, or, and, not, inArray } from "drizzle-orm";
 import {
   filterManagerNotifications,
@@ -21,15 +21,15 @@ import {
   filterVendorAdminNotifications,
   filterVendorEmployeeNotifications,
   normalizeNotificationRole,
-} from "../lib/notification-filters.js";
-import { enrichNotificationsForViewer } from "../lib/notification-display.js";
-import { buildProfileUpdateMetadata } from "../lib/portal-session-messages.js";
-import { getAuthSession } from "../lib/auth-tokens.js";
-import { storage } from "../services/storage.js";
+} from "../../lib/notifications/filters.js";
+import { enrichNotificationsForViewer } from "../../lib/notifications/display.js";
+import { buildProfileUpdateMetadata } from "../../lib/activity/session-messages.js";
+import { getAuthSession } from "../../lib/auth/tokens.js";
+import { storage } from "../../services/storage.js";
 import fs from "fs";
 import path from "path";
-import { newId, updateOneById } from "../lib/db-helpers.js";
-import type { CompatExpressApp } from "../lib/express-compat.js";
+import { newId, updateOneById } from "../../db/helpers.js";
+import type { CompatExpressApp } from "../../lib/express-compat.js";
 
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) {

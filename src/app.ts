@@ -7,9 +7,9 @@ import fastifyStatic from "@fastify/static";
 import path from "path";
 import { fileURLToPath } from "url";
 import { requestContext } from "./lib/async-context.js";
-import { getAuthSession, initAuthTokens } from "./lib/auth-tokens.js";
+import { getAuthSession, initAuthTokens } from "./lib/auth/tokens.js";
 import { createExpressCompatApp } from "./lib/express-compat.js";
-import { registerRoutes } from "./routes/main.js";
+import { registerRoutes } from "./routes/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

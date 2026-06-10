@@ -1,9 +1,9 @@
 import { randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
 import mysql from "mysql2/promise";
-import { db } from "../src/lib/db.js";
-import { getDatabaseConfig } from "../src/lib/db-config";
-import { hashPassword } from "../src/lib/password";
+import { db } from "../src/db/client.js";
+import { getDatabaseConfig } from "../src/db/config";
+import { hashPassword } from "../src/lib/auth/password";
 import {
   users,
   vendors,
@@ -19,7 +19,7 @@ import {
   internalNotes,
   orderSheetItems,
   type InvoiceLineItemSnapshot,
-} from "../src/shared/schema.js";
+} from "../src/db/schema.js";
 
 const ids = {
   adminUser: "11111111-1111-1111-1111-111111111101",

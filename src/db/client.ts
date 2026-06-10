@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { getDatabaseUrl, requiresDatabaseSsl } from "./db-config.js";
-import * as schema from "../shared/schema.js";
+import { getDatabaseUrl, requiresDatabaseSsl } from "./config.js";
+import * as schema from "./schema.js";
 
 const databaseUrl = getDatabaseUrl();
 

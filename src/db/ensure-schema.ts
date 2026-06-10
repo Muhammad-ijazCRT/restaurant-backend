@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { db } from "./db.js";
+import { db } from "./client.js";
 
 export async function ensureNotificationClearancesTable(): Promise<void> {
   await db.execute(sql`

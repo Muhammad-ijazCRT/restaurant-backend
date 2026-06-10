@@ -1,8 +1,8 @@
-import { db } from "./db.js";
-import { activityLogs, orders, type Order } from "../shared/schema.js";
+import { db } from "../../db/client.js";
+import { activityLogs, orders, type Order } from "../../db/schema.js";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
-import { storage } from "../services/storage.js";
-import { parseActivityMetadata } from "./notification-filters";
+import { storage } from "../../services/storage.js";
+import { parseActivityMetadata } from "../notifications/filters.js";
 
 export type DashboardPeriod = "today" | "week" | "month";
 

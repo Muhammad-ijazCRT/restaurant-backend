@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import { getDatabaseConfig } from "../src/lib/db-config";
+import { getDatabaseConfig } from "../src/db/config";
 
 async function main() {
   const config = getDatabaseConfig();

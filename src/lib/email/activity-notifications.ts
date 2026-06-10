@@ -1,7 +1,7 @@
-import { db } from "./db.js";
-import type { ActivityLog } from "../shared/schema.js";
-import { users } from "../shared/schema.js";
-import { storage } from "../services/storage.js";
+import { db } from "../../db/client.js";
+import type { ActivityLog } from "../../db/schema.js";
+import { users } from "../../db/schema.js";
+import { storage } from "../../services/storage.js";
 import {
   filterManagerNotifications,
   filterRestaurantNotifications,
@@ -10,14 +10,14 @@ import {
   filterVendorEmployeeNotifications,
   normalizeNotificationRole,
   type VendorEmployeeNotificationRole,
-} from "./notification-filters";
+} from "../notifications/filters.js";
 import {
   resolveNotificationDisplayMessage,
   resolveNotificationDisplayTitle,
-} from "./notification-display";
-import { buildPortalEmailHtml } from "./email-template";
-import { isMailConfigured, sendMail } from "./mailer";
-import { notificationActionLabel } from "./notification-labels";
+} from "../notifications/display.js";
+import { buildPortalEmailHtml } from "./template.js";
+import { isMailConfigured, sendMail } from "./mailer.js";
+import { notificationActionLabel } from "../notifications/labels.js";
 
 type PortalRecipient = {
   userId: string;

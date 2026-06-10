@@ -1,6 +1,6 @@
-import { storage } from "../services/storage.js";
-import { mergeOrderNotificationMetadata } from "./order-notification-metadata";
-import { queueActivityEmails } from "./activity-email-notifications";
+import { storage } from "../../services/storage.js";
+import { mergeOrderNotificationMetadata } from "./order-metadata.js";
+import { queueActivityEmails } from "../email/activity-notifications.js";
 
 export type PortalActivityEntry = {
   action: string;

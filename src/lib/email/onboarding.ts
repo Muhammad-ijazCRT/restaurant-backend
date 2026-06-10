@@ -1,8 +1,8 @@
-import type { RestaurantEmployee, RestaurantOrg, Vendor } from "../shared/schema.js";
-import { storage } from "../services/storage.js";
-import { buildPortalEmailHtml } from "./email-template";
-import { isMailConfigured, normalizePortalEmail, sendMail } from "./mailer";
-import { getPrimaryRoleLabel } from "./restaurant-employee-permissions";
+import type { RestaurantEmployee, RestaurantOrg, Vendor } from "../../db/schema.js";
+import { storage } from "../../services/storage.js";
+import { buildPortalEmailHtml } from "./template.js";
+import { isMailConfigured, normalizePortalEmail, sendMail } from "./mailer.js";
+import { getPrimaryRoleLabel } from "../permissions/restaurant-employee.js";
 
 function portalOrigin(): string {
   return process.env.FRONTEND_URL?.trim() || process.env.CORS_ORIGIN?.trim() || "http://localhost:3000";

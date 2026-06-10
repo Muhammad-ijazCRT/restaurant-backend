@@ -3,9 +3,9 @@
  * Run: pnpm run db:seed:login
  */
 import { eq } from "drizzle-orm";
-import { db } from "../src/lib/db.js";
-import { users, vendors, restaurantOrganizations } from "../src/shared/schema.js";
-import { hashPassword } from "../src/lib/password";
+import { db } from "../src/db/client.js";
+import { users, vendors, restaurantOrganizations } from "../src/db/schema.js";
+import { hashPassword } from "../src/lib/auth/password";
 
 const LOGIN = {
   admin: { email: "admin@gmail.com", password: "password", name: "Super Admin" },

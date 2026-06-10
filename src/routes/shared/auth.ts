@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { db } from "../lib/db.js";
+import { db } from "../../db/client.js";
 import {
   users,
   vendors,
@@ -10,21 +10,21 @@ import {
   restaurantOrganizations,
   insertVendorSchema,
   insertRestaurantOrgSchema,
-} from "../shared/schema.js";
-import { hashPassword, verifyPassword } from "../lib/password.js";
-import { buildLoginMetadata } from "../lib/portal-session-messages.js";
+} from "../../db/schema.js";
+import { hashPassword, verifyPassword } from "../../lib/auth/password.js";
+import { buildLoginMetadata } from "../../lib/activity/session-messages.js";
 import {
   createAuthToken,
   getAuthSession,
   signUpdatedSession,
   updateAuthSession,
-} from "../lib/auth-tokens.js";
-import { storage } from "../services/storage.js";
+} from "../../lib/auth/tokens.js";
+import { storage } from "../../services/storage.js";
 import {
   getRestaurantEmployeeLoginRole,
   normalizeEmployeeRoleList as normalizeRestaurantEmployeeRoles,
-} from "../lib/restaurant-employee-permissions.js";
-import type { CompatExpressApp, CompatRequest, CompatResponse } from "../lib/express-compat.js";
+} from "../../lib/permissions/restaurant-employee.js";
+import type { CompatExpressApp, CompatRequest, CompatResponse } from "../../lib/express-compat.js";
 
 const loginSchema = z.object({
   email: z.string().email(),

@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { eq, type SQL } from "drizzle-orm";
-import { db } from "./db.js";
-import { requestContext } from "./async-context.js";
-import { activityLogs } from "../shared/schema.js";
+import { db } from "./client.js";
+import { requestContext } from "../lib/async-context.js";
+import { activityLogs } from "./schema.js";
 
 async function logActivity(executor: DbExecutor, action: string, table: any, id: string | null, metadata?: string) {
   if (table === activityLogs) return;

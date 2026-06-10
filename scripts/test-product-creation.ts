@@ -1,5 +1,5 @@
-import { db } from "../src/lib/db.js";
-import { vendors } from "../src/shared/schema.js";
+import { db } from "../src/db/client.js";
+import { vendors } from "../src/db/schema.js";
 import { storage } from "../src/services/storage.js";
 
 async function run() {

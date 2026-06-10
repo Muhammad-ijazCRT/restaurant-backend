@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 import mysql from "mysql2/promise";
-import { getDatabaseConfig } from "../src/lib/db-config";
+import { getDatabaseConfig } from "../src/db/config";
 
 async function ensureDatabaseExists() {
   const config = getDatabaseConfig();

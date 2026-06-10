@@ -3,9 +3,9 @@
  * Run: pnpm exec tsx --env-file=.env scripts/reset-user-password.ts <email> [password]
  */
 import { eq } from "drizzle-orm";
-import { db } from "../src/lib/db.js";
-import { users } from "../src/shared/schema.js";
-import { hashPassword, verifyPassword } from "../src/lib/password";
+import { db } from "../src/db/client.js";
+import { users } from "../src/db/schema.js";
+import { hashPassword, verifyPassword } from "../src/lib/auth/password";
 
 const email = process.argv[2]?.trim().toLowerCase();
 const password = process.argv[3] ?? "password";

@@ -1,5 +1,5 @@
-import { isMailConfigured, mailFromAddress, sendMail } from "../src/lib/mailer";
-import { buildPortalEmailHtml } from "../src/lib/email-template";
+import { isMailConfigured, mailFromAddress, sendMail } from "../src/lib/email/mailer";
+import { buildPortalEmailHtml } from "../src/lib/email/template";
 
 if (!isMailConfigured()) {
   console.error("SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS in .env");

@@ -1,4 +1,4 @@
-import { db } from "../src/lib/db.js";
+import { db } from "../src/db/client.js";
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
 

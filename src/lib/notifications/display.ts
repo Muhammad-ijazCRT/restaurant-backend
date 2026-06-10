@@ -1,4 +1,4 @@
-import type { ActivityLog } from "../shared/schema.js";
+import type { ActivityLog } from "../../db/schema.js";
 import {
   isOwnEmployeeLogin,
   isOwnRestaurantLogin,
@@ -6,7 +6,7 @@ import {
   isOwnVendorLogin,
   normalizeNotificationRole,
   parseActivityMetadata,
-} from "./notification-filters";
+} from "./filters.js";
 
 function normalizeId(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
