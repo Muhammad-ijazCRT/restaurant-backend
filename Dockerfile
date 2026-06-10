@@ -20,4 +20,4 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/public ./public
 
 EXPOSE 5000
-CMD ["node", "--env-file=.env", "dist/server.js"]
+CMD ["npm", "run", "start:prod"]

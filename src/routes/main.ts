@@ -68,6 +68,10 @@ export async function registerRoutes(
     console.error("[startup] Skipped order backfill:", err);
   }
 
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, service: "restaurant-portal-api" });
+  });
+
   registerAuthRoutes(app);
   registerProfileRoutes(app);
 

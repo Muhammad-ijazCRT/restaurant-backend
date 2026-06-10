@@ -35,7 +35,7 @@ export function buildPortalEmailHtml(options: {
     restaurantName,
     vendorName,
     createdByName,
-    portalUrl = process.env.CORS_ORIGIN?.trim() || "http://localhost:3000",
+    portalUrl = process.env.FRONTEND_URL?.trim() || process.env.CORS_ORIGIN?.trim() || "http://localhost:3000",
     nextSteps,
     buttonLabel,
     footerNote,

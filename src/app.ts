@@ -42,10 +42,21 @@ export async function buildApp() {
     crossOriginResourcePolicy: { policy: "cross-origin" },
   });
 
-  // Allow requests from any browser origin (reflects the request Origin header).
-  // Note: literal "*" cannot be used with credentials:true per browser spec.
+  const configuredOrigins = process.env.CORS_ORIGIN
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   await app.register(cors, {
-    origin: true,
+    origin: configuredOrigins?.length
+      ? (origin, callback) => {
+          if (!origin || configuredOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+          }
+          callback(new Error("CORS origin not allowed"), false);
+        }
+      : true,
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],

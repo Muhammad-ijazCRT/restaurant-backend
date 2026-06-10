@@ -5,7 +5,7 @@ import { isMailConfigured, normalizePortalEmail, sendMail } from "./mailer";
 import { getPrimaryRoleLabel } from "./restaurant-employee-permissions";
 
 function portalOrigin(): string {
-  return process.env.CORS_ORIGIN?.trim() || "http://localhost:3000";
+  return process.env.FRONTEND_URL?.trim() || process.env.CORS_ORIGIN?.trim() || "http://localhost:3000";
 }
 
 function emailsEnabled(): boolean {
