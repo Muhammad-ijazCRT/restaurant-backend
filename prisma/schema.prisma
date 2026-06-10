@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String  @id @db.VarChar(36)
+  username String  @unique @db.VarChar(255)
+  name     String? @db.Text
+  phone    String? @db.Text
+  password String  @db.Text
+  image    String? @db.LongText
+
+  @@map("users")
+}
+
+model Vendor {
+  id            String   @id @db.VarChar(36)
+  name          String   @db.Text
+  contactName   String   @map("contact_name") @db.Text
+  email         String   @db.Text
+  loginPassword String?  @map("login_password") @db.Text
+  phone         String   @db.Text
+  status        String   @default("active") @db.Text
+  image         String?  @db.LongText
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  employees         VendorEmployee[]
+  cutoffSettings    VendorCutoffSettings?
+  products          Product[]
+  orders            Order[]
+  invoices          Invoice[]
+  relationships     VendorRestaurantRelationship[]
+
+  @@map("vendors")
+}
+
+model VendorEmployee {
+  id                      String   @id @db.VarChar(36)
+  vendorId                String   @map("vendor_id") @db.VarChar(36)
+  name                    String   @db.Text
+  email                   String   @db.Text
+  phone                   String?  @db.Text
+  loginPassword           String   @map("login_password") @db.Text
+  roles                   Json
+  extraPermissions        Json?    @default("[]") @map("extra_permissions")
+  relationshipAssignments Json?    @default("[]") @map("relationship_assignments")
+  image                   String?  @db.LongText
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_employees")
+}
+
+model VendorCutoffSettings {
+  id              String   @id @db.VarChar(36)
+  vendorId        String   @unique @map("vendor_id") @db.VarChar(36)
+  cutoffHour      Int      @default(17) @map("cutoff_hour")
+  cutoffMinute    Int      @default(0) @map("cutoff_minute")
+  isEnabled       Int      @default(1) @map("is_enabled")
+  reminderMessage String?  @map("reminder_message") @db.VarChar(500)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_cutoff_settings")
+}
+
+model RestaurantOrganization {
+  id            String   @id @db.VarChar(36)
+  name          String   @db.Text
+  contactName   String   @map("contact_name") @db.Text
+  email         String   @db.Text
+  loginPassword String?  @map("login_password") @db.Text
+  phone         String   @db.Text
+  status        String   @default("active") @db.Text
+  image         String?  @db.LongText
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  employees     RestaurantEmployee[]
+  orders        Order[]
+  invoices      Invoice[]
+  relationships VendorRestaurantRelationship[]
+
+  @@map("restaurant_organizations")
+}
+
+model RestaurantEmployee {
+  id               String   @id @db.VarChar(36)
+  restaurantOrgId  String   @map("restaurant_org_id") @db.VarChar(36)
+  name             String   @db.Text
+  email            String   @db.Text
+  phone            String?  @db.Text
+  loginPassword    String   @map("login_password") @db.Text
+  roles            Json
+  extraPermissions Json?  @default("[]") @map("extra_permissions")
+  image            String?  @db.LongText
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  restaurant RestaurantOrganization @relation(fields: [restaurantOrgId], references: [id], onDelete: Cascade)
+
+  @@map("restaurant_employees")
+}
+
+model VendorRestaurantRelationship {
+  id              String   @id @db.VarChar(36)
+  vendorId        String   @map("vendor_id") @db.VarChar(36)
+  restaurantOrgId String   @map("restaurant_org_id") @db.VarChar(36)
+  status          String   @default("active") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  vendor     Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  restaurant RestaurantOrganization @relation(fields: [restaurantOrgId], references: [id], onDelete: Cascade)
+  orderSheet OrderSheetItem[]
+
+  @@map("vendor_restaurant_relationships")
+}
+
+model Product {
+  id        String   @id @db.VarChar(36)
+  vendorId  String   @map("vendor_id") @db.VarChar(36)
+  name      String   @db.Text
+  sku       String?  @db.VarChar(255)
+  stockType String?  @map("stock_type") @db.Text
+  unitType  String   @map("unit_type") @db.Text
+  unitSize  String   @map("unit_size") @db.Text
+  price     Decimal  @db.Decimal(10, 2)
+  status    String   @default("active") @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vendor           Vendor             @relation(fields: [vendorId], references: [id])
+  orderLineItems   OrderLineItem[]
+  orderSheetItems  OrderSheetItem[]
+  substitutionsOrig OrderSubstitution[] @relation("OriginalProduct")
+  substitutionsSub  OrderSubstitution[] @relation("SubstituteProduct")
+
+  @@unique([vendorId, sku], name: "unique_vendor_sku")
+  @@map("products")
+}
+
+model Order {
+  id                         String    @id @db.VarChar(36)
+  displayId                  Int?      @unique @map("display_id")
+  restaurantOrgId            String    @map("restaurant_org_id") @db.VarChar(36)
+  vendorId                   String    @map("vendor_id") @db.VarChar(36)
+  status                     String    @default("draft") @db.Text
+  warehouseWorkerId          String?   @map("warehouse_worker_id") @db.VarChar(36)
+  driverId                   String?   @map("driver_id") @db.VarChar(36)
+  pickingStatus              String?   @map("picking_status") @db.Text
+  readyForDeliveryAt         DateTime? @map("ready_for_delivery_at")
+  driverNote                 String?   @map("driver_note") @db.Text
+  cutoffAt                   DateTime? @map("cutoff_at")
+  restaurantIssueStatus      String?   @map("restaurant_issue_status") @db.Text
+  driverResolutionNote       String?   @map("driver_resolution_note") @db.Text
+  driverResolvedAt           DateTime? @map("driver_resolved_at")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  vendorConfirmedAt          DateTime? @map("vendor_confirmed_at")
+  restaurantConfirmedAt      DateTime? @map("restaurant_confirmed_at")
+  restaurantReviewSubmittedAt DateTime? @map("restaurant_review_submitted_at")
+  vendorApprovedAt           DateTime? @map("vendor_approved_at")
+  vendorRejectedAt           DateTime? @map("vendor_rejected_at")
+  vendorRejectionReason      String?   @map("vendor_rejection_reason") @db.Text
+  paidAt                     DateTime? @map("paid_at")
+
+  restaurant    RestaurantOrganization @relation(fields: [restaurantOrgId], references: [id])
+  vendor        Vendor                 @relation(fields: [vendorId], references: [id])
+  lineItems     OrderLineItem[]
+  fulfillments  OrderLineItemFulfillment[]
+  substitutions OrderSubstitution[]
+  invoice       Invoice?
+
+  @@map("orders")
+}
+
+model OrderLineItem {
+  id                     String  @id @db.VarChar(36)
+  orderId                String  @map("order_id") @db.VarChar(36)
+  productId              String  @map("product_id") @db.VarChar(36)
+  quantity               Int
+  unitPriceAtTimeOfOrder Decimal @map("unit_price_at_time_of_order") @db.Decimal(10, 2)
+
+  order        Order                     @relation(fields: [orderId], references: [id])
+  product      Product                   @relation(fields: [productId], references: [id])
+  fulfillment  OrderLineItemFulfillment?
+  substitutions OrderSubstitution[]
+
+  @@map("order_line_items")
+}
+
+model OrderLineItemFulfillment {
+  id                  String    @id @db.VarChar(36)
+  orderLineItemId     String    @unique @map("order_line_item_id") @db.VarChar(36)
+  orderId             String    @map("order_id") @db.VarChar(36)
+  fulfilledQuantity   Int?      @map("fulfilled_quantity")
+  loadedQuantity      Int?      @map("loaded_quantity")
+  reconciledUnitPrice Decimal?  @map("reconciled_unit_price") @db.Decimal(10, 2)
+  fulfillmentStatus   String?   @map("fulfillment_status") @db.Text
+  issueReason         String?   @map("issue_reason") @db.VarChar(255)
+  warehouseNote       String?   @map("warehouse_note") @db.VarChar(500)
+  restaurantReceivedQty Int?    @map("restaurant_received_qty")
+  restaurantNote      String?   @map("restaurant_note") @db.VarChar(500)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  orderLineItem OrderLineItem @relation(fields: [orderLineItemId], references: [id], onDelete: Cascade)
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_line_item_fulfillments")
+}
+
+model OrderSubstitution {
+  id                  String   @id @db.VarChar(36)
+  orderId             String   @map("order_id") @db.VarChar(36)
+  orderLineItemId     String   @map("order_line_item_id") @db.VarChar(36)
+  originalProductId   String   @map("original_product_id") @db.VarChar(36)
+  substituteProductId String   @map("substitute_product_id") @db.VarChar(36)
+  proposedQty         Int      @map("proposed_qty")
+  note                String?  @db.Text
+  status              String   @default("proposed") @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  order             Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLineItem     OrderLineItem @relation(fields: [orderLineItemId], references: [id], onDelete: Cascade)
+  originalProduct   Product       @relation("OriginalProduct", fields: [originalProductId], references: [id])
+  substituteProduct Product       @relation("SubstituteProduct", fields: [substituteProductId], references: [id])
+
+  @@map("order_substitutions")
+}
+
+model Invoice {
+  id              String   @id @db.VarChar(36)
+  orderId         String   @unique @map("order_id") @db.VarChar(36)
+  displayOrderId  Int?     @map("display_order_id")
+  vendorId        String   @map("vendor_id") @db.VarChar(36)
+  restaurantOrgId String   @map("restaurant_org_id") @db.VarChar(36)
+  approvedTotal   Decimal  @map("approved_total") @db.Decimal(12, 2)
+  approvedAt      DateTime @map("approved_at")
+  lineItems       Json     @map("line_items")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  order        Order                  @relation(fields: [orderId], references: [id])
+  vendor       Vendor                 @relation(fields: [vendorId], references: [id])
+  restaurant   RestaurantOrganization @relation(fields: [restaurantOrgId], references: [id])
+
+  @@map("invoices")
+}
+
+model OrderSheetItem {
+  id             String   @id @db.VarChar(36)
+  relationshipId String   @map("relationship_id") @db.VarChar(36)
+  productId      String   @map("product_id") @db.VarChar(36)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  relationship VendorRestaurantRelationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  product      Product                      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([relationshipId, productId], name: "unique_order_sheet_item")
+  @@map("order_sheet_items")
+}
+
+model ActivityLog {
+  id           String   @id @db.VarChar(36)
+  action       String   @db.Text
+  entityType   String   @map("entity_type") @db.Text
+  entityId     String   @map("entity_id") @db.Text
+  entityName   String   @map("entity_name") @db.Text
+  vendorId     String?  @map("vendor_id") @db.VarChar(36)
+  restaurantId String?  @map("restaurant_id") @db.VarChar(36)
+  metadata     String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("activity_logs")
+}
+
+model NotificationClearance {
+  viewerKey String   @id @map("viewer_key") @db.VarChar(128)
+  clearedAt DateTime @map("cleared_at")
+
+  @@map("notification_clearances")
+}
+
+model Attachment {
+  id         String   @id @db.VarChar(36)
+  entityType String   @map("entity_type") @db.Text
+  entityId   String   @map("entity_id") @db.Text
+  fileName   String   @map("file_name") @db.Text
+  fileType   String   @map("file_type") @db.Text
+  fileSize   Int      @map("file_size")
+  fileData   String   @map("file_data") @db.LongText
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("attachments")
+}
+
+model InternalNote {
+  id         String   @id @db.VarChar(36)
+  entityType String   @map("entity_type") @db.Text
+  entityId   String   @map("entity_id") @db.Text
+  body       String   @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("internal_notes")
+}
