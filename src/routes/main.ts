@@ -1322,7 +1322,8 @@ export async function registerRoutes(
             fulfilledQuantity: item.loadedQty,
             fulfillmentStatus: item.status,
             warehouseNote: item.note ?? null,
-          }).onDuplicateKeyUpdate({
+          }).onConflictDoUpdate({
+            target: orderLineItemFulfillments.orderLineItemId,
             set: {
               loadedQuantity: item.loadedQty,
               fulfilledQuantity: item.loadedQty,
@@ -2419,7 +2420,8 @@ export async function registerRoutes(
               restaurantReceivedQty: item.receivedQty ?? null,
               restaurantNote: item.note ?? null,
             })
-            .onDuplicateKeyUpdate({
+            .onConflictDoUpdate({
+              target: orderLineItemFulfillments.orderLineItemId,
               set: {
                 restaurantReceivedQty: item.receivedQty ?? null,
                 restaurantNote: item.note ?? null,

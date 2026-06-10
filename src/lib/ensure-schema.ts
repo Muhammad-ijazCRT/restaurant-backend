@@ -19,27 +19,21 @@ export async function ensureRestaurantEmployeesTable(): Promise<void> {
       email TEXT NOT NULL,
       phone TEXT NULL,
       login_password TEXT NOT NULL,
-      roles JSON NOT NULL,
-      extra_permissions JSON NULL,
-      image LONGTEXT NULL,
+      roles JSONB NOT NULL,
+      extra_permissions JSONB NULL,
+      image TEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   try {
-    await db.execute(sql`
-      ALTER TABLE restaurant_employees
-      ADD COLUMN phone TEXT NULL AFTER email
-    `);
+    await db.execute(sql`ALTER TABLE restaurant_employees ADD COLUMN phone TEXT NULL`);
   } catch {
     // Column already exists.
   }
 
   try {
-    await db.execute(sql`
-      ALTER TABLE restaurant_employees
-      ADD COLUMN image LONGTEXT NULL AFTER extra_permissions
-    `);
+    await db.execute(sql`ALTER TABLE restaurant_employees ADD COLUMN image TEXT NULL`);
   } catch {
     // Column already exists.
   }
@@ -47,19 +41,13 @@ export async function ensureRestaurantEmployeesTable(): Promise<void> {
 
 export async function ensureVendorEmployeePermissionColumns(): Promise<void> {
   try {
-    await db.execute(sql`
-      ALTER TABLE vendor_employees
-      ADD COLUMN extra_permissions JSON NULL AFTER roles
-    `);
+    await db.execute(sql`ALTER TABLE vendor_employees ADD COLUMN extra_permissions JSONB NULL`);
   } catch {
     // Column already exists.
   }
 
   try {
-    await db.execute(sql`
-      ALTER TABLE vendor_employees
-      ADD COLUMN relationship_assignments JSON NULL AFTER extra_permissions
-    `);
+    await db.execute(sql`ALTER TABLE vendor_employees ADD COLUMN relationship_assignments JSONB NULL`);
   } catch {
     // Column already exists.
   }

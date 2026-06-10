@@ -391,7 +391,10 @@ export function registerProfileRoutes(app: CompatExpressApp) {
       await db
         .insert(notificationClearances)
         .values({ viewerKey, clearedAt })
-        .onDuplicateKeyUpdate({ set: { clearedAt } });
+        .onConflictDoUpdate({
+          target: notificationClearances.viewerKey,
+          set: { clearedAt },
+        });
 
       res.json({
         status: "success",

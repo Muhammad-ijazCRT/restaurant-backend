@@ -1,18 +1,8 @@
-import { drizzle } from "drizzle-orm/mysql2";
-import mysql from "mysql2/promise";
-import { getDatabaseConfig } from "./db-config.js";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { getDatabaseUrl } from "./db-config.js";
 import * as schema from "../shared/schema.js";
 
-const config = getDatabaseConfig();
+const client = postgres(getDatabaseUrl(), { max: 10 });
 
-const pool = mysql.createPool({
-  host: config.host,
-  port: config.port,
-  user: config.user,
-  password: config.password,
-  database: config.database,
-  waitForConnections: true,
-  connectionLimit: 10,
-});
-
-export const db = drizzle(pool, { schema, mode: "default" });
+export const db = drizzle(client, { schema });

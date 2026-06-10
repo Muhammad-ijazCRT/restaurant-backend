@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -13,7 +13,7 @@ model User {
   name     String? @db.Text
   phone    String? @db.Text
   password String  @db.Text
-  image    String? @db.LongText
+  image    String? @db.Text
 
   @@map("users")
 }
@@ -26,7 +26,7 @@ model Vendor {
   loginPassword String?  @map("login_password") @db.Text
   phone         String   @db.Text
   status        String   @default("active") @db.Text
-  image         String?  @db.LongText
+  image         String?  @db.Text
   createdAt     DateTime @default(now()) @map("created_at")
 
   employees         VendorEmployee[]
@@ -49,7 +49,7 @@ model VendorEmployee {
   roles                   Json
   extraPermissions        Json?    @default("[]") @map("extra_permissions")
   relationshipAssignments Json?    @default("[]") @map("relationship_assignments")
-  image                   String?  @db.LongText
+  image                   String?  @db.Text
   createdAt               DateTime @default(now()) @map("created_at")
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
@@ -80,7 +80,7 @@ model RestaurantOrganization {
   loginPassword String?  @map("login_password") @db.Text
   phone         String   @db.Text
   status        String   @default("active") @db.Text
-  image         String?  @db.LongText
+  image         String?  @db.Text
   createdAt     DateTime @default(now()) @map("created_at")
 
   employees     RestaurantEmployee[]
@@ -100,7 +100,7 @@ model RestaurantEmployee {
   loginPassword    String   @map("login_password") @db.Text
   roles            Json
   extraPermissions Json?  @default("[]") @map("extra_permissions")
-  image            String?  @db.LongText
+  image            String?  @db.Text
   createdAt        DateTime @default(now()) @map("created_at")
 
   restaurant RestaurantOrganization @relation(fields: [restaurantOrgId], references: [id], onDelete: Cascade)
@@ -292,7 +292,7 @@ model Attachment {
   fileName   String   @map("file_name") @db.Text
   fileType   String   @map("file_type") @db.Text
   fileSize   Int      @map("file_size")
-  fileData   String   @map("file_data") @db.LongText
+  fileData   String   @map("file_data") @db.Text
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@map("attachments")

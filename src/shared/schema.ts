@@ -1,18 +1,17 @@
 import {
-  mysqlTable,
+  pgTable,
   text,
   varchar,
   timestamp,
-  decimal,
+  numeric,
   uniqueIndex,
-  int,
+  integer,
   json,
-  longtext,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const internalNotes = mysqlTable("internal_notes", {
+export const internalNotes = pgTable("internal_notes", {
   id: varchar("id", { length: 36 }).primaryKey(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
@@ -32,14 +31,14 @@ export const insertInternalNoteSchema = createInsertSchema(internalNotes).omit({
 export type InsertInternalNote = z.infer<typeof insertInternalNoteSchema>;
 export type InternalNote = typeof internalNotes.$inferSelect;
 
-export const attachments = mysqlTable("attachments", {
+export const attachments = pgTable("attachments", {
   id: varchar("id", { length: 36 }).primaryKey(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
   fileName: text("file_name").notNull(),
   fileType: text("file_type").notNull(),
-  fileSize: int("file_size").notNull(),
-  fileData: longtext("file_data").notNull(),
+  fileSize: integer("file_size").notNull(),
+  fileData: text("file_data").notNull(),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -51,7 +50,7 @@ export type ActivityAction = string;
 
 export type ActivityEntityType = string;
 
-export const activityLogs = mysqlTable("activity_logs", {
+export const activityLogs = pgTable("activity_logs", {
   id: varchar("id", { length: 36 }).primaryKey(),
   action: text("action").notNull(),
   entityType: text("entity_type").notNull(),
@@ -65,7 +64,7 @@ export const activityLogs = mysqlTable("activity_logs", {
 
 export type ActivityLog = typeof activityLogs.$inferSelect;
 
-export const notificationClearances = mysqlTable("notification_clearances", {
+export const notificationClearances = pgTable("notification_clearances", {
   viewerKey: varchar("viewer_key", { length: 128 }).primaryKey(),
   clearedAt: timestamp("cleared_at").notNull(),
 });
@@ -96,13 +95,13 @@ export function formatPhone(phone: unknown): string {
   return String(phone ?? "");
 }
 
-export const users = mysqlTable("users", {
+export const users = pgTable("users", {
   id: varchar("id", { length: 36 }).primaryKey(),
   username: varchar("username", { length: 255 }).notNull().unique(), // Acts as email/login
   name: text("name"),
   phone: text("phone"),
   password: text("password").notNull(),
-  image: longtext("image"),
+  image: text("image"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -113,7 +112,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
-export const vendors = mysqlTable("vendors", {
+export const vendors = pgTable("vendors", {
   id: varchar("id", { length: 36 }).primaryKey(),
   name: text("name").notNull(),
   contactName: text("contact_name").notNull(),
@@ -121,7 +120,7 @@ export const vendors = mysqlTable("vendors", {
   loginPassword: text("login_password"),
   phone: text("phone").notNull(),
   status: text("status").notNull().default("active"),
-  image: longtext("image"),
+  image: text("image"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -139,7 +138,7 @@ export const insertVendorSchema = createInsertSchema(vendors).omit({
 export type InsertVendor = z.infer<typeof insertVendorSchema>;
 export type Vendor = typeof vendors.$inferSelect;
 
-export const vendorEmployees = mysqlTable("vendor_employees", {
+export const vendorEmployees = pgTable("vendor_employees", {
   id: varchar("id", { length: 36 }).primaryKey(),
   vendorId: varchar("vendor_id", { length: 36 }).notNull(),
   name: text("name").notNull(),
@@ -149,7 +148,7 @@ export const vendorEmployees = mysqlTable("vendor_employees", {
   roles: json("roles").notNull().$type<string[]>(),
   extraPermissions: json("extra_permissions").$type<string[]>().default([]),
   relationshipAssignments: json("relationship_assignments").$type<string[]>().default([]),
-  image: longtext("image"),
+  image: text("image"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -172,12 +171,12 @@ export const insertVendorEmployeeSchema = createInsertSchema(vendorEmployees).om
 export type InsertVendorEmployee = z.infer<typeof insertVendorEmployeeSchema>;
 export type VendorEmployee = typeof vendorEmployees.$inferSelect;
 
-export const vendorCutoffSettings = mysqlTable("vendor_cutoff_settings", {
+export const vendorCutoffSettings = pgTable("vendor_cutoff_settings", {
   id: varchar("id", { length: 36 }).primaryKey(),
   vendorId: varchar("vendor_id", { length: 36 }).notNull().references(() => vendors.id, { onDelete: "cascade" }).unique(),
-  cutoffHour: int("cutoff_hour").notNull().default(17),
-  cutoffMinute: int("cutoff_minute").notNull().default(0),
-  isEnabled: int("is_enabled").notNull().default(1),
+  cutoffHour: integer("cutoff_hour").notNull().default(17),
+  cutoffMinute: integer("cutoff_minute").notNull().default(0),
+  isEnabled: integer("is_enabled").notNull().default(1),
   reminderMessage: varchar("reminder_message", { length: 500 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -198,7 +197,7 @@ export const insertVendorCutoffSettingsSchema = createInsertSchema(vendorCutoffS
 export type InsertVendorCutoffSettings = z.infer<typeof insertVendorCutoffSettingsSchema>;
 export type VendorCutoffSettings = typeof vendorCutoffSettings.$inferSelect;
 
-export const restaurantOrganizations = mysqlTable("restaurant_organizations", {
+export const restaurantOrganizations = pgTable("restaurant_organizations", {
   id: varchar("id", { length: 36 }).primaryKey(),
   name: text("name").notNull(),
   contactName: text("contact_name").notNull(),
@@ -206,7 +205,7 @@ export const restaurantOrganizations = mysqlTable("restaurant_organizations", {
   loginPassword: text("login_password"),
   phone: text("phone").notNull(),
   status: text("status").notNull().default("active"),
-  image: longtext("image"),
+  image: text("image"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -224,7 +223,7 @@ export const insertRestaurantOrgSchema = createInsertSchema(restaurantOrganizati
 export type InsertRestaurantOrg = z.infer<typeof insertRestaurantOrgSchema>;
 export type RestaurantOrg = typeof restaurantOrganizations.$inferSelect;
 
-export const restaurantEmployees = mysqlTable("restaurant_employees", {
+export const restaurantEmployees = pgTable("restaurant_employees", {
   id: varchar("id", { length: 36 }).primaryKey(),
   restaurantOrgId: varchar("restaurant_org_id", { length: 36 }).notNull(),
   name: text("name").notNull(),
@@ -233,7 +232,7 @@ export const restaurantEmployees = mysqlTable("restaurant_employees", {
   loginPassword: text("login_password").notNull(),
   roles: json("roles").notNull().$type<string[]>(),
   extraPermissions: json("extra_permissions").$type<string[]>().default([]),
-  image: longtext("image"),
+  image: text("image"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -254,7 +253,7 @@ export const insertRestaurantEmployeeSchema = createInsertSchema(restaurantEmplo
 
 export type InsertRestaurantEmployee = z.infer<typeof insertRestaurantEmployeeSchema>;
 export type RestaurantEmployee = typeof restaurantEmployees.$inferSelect;
-export const vendorRestaurantRelationships = mysqlTable("vendor_restaurant_relationships", {
+export const vendorRestaurantRelationships = pgTable("vendor_restaurant_relationships", {
   id: varchar("id", { length: 36 }).primaryKey(),
   vendorId: varchar("vendor_id", { length: 36 }).notNull().references(() => vendors.id, { onDelete: "cascade" }),
   restaurantOrgId: varchar("restaurant_org_id", { length: 36 }).notNull().references(() => restaurantOrganizations.id, { onDelete: "cascade" }),
@@ -274,7 +273,7 @@ export const insertRelationshipSchema = createInsertSchema(vendorRestaurantRelat
 export type InsertRelationship = z.infer<typeof insertRelationshipSchema>;
 export type VendorRestaurantRelationship = typeof vendorRestaurantRelationships.$inferSelect;
 
-export const products = mysqlTable("products", {
+export const products = pgTable("products", {
   id: varchar("id", { length: 36 }).primaryKey(),
   vendorId: varchar("vendor_id", { length: 36 }).notNull().references(() => vendors.id),
   name: text("name").notNull(),
@@ -282,9 +281,9 @@ export const products = mysqlTable("products", {
   stockType: text("stock_type"),
   unitType: text("unit_type").notNull(),
   unitSize: text("unit_size").notNull(),
-  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  price: numeric("price", { precision: 10, scale: 2 }).notNull(),
   status: text("status").notNull().default("active"),
-  sortOrder: int("sort_order").default(0).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("unique_vendor_sku").on(table.vendorId, table.sku),
@@ -307,9 +306,9 @@ export const insertProductSchema = createInsertSchema(products).omit({
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 
-export const orders = mysqlTable("orders", {
+export const orders = pgTable("orders", {
   id: varchar("id", { length: 36 }).primaryKey(),
-  displayId: int("display_id").unique(),
+  displayId: integer("display_id").unique(),
   restaurantOrgId: varchar("restaurant_org_id", { length: 36 }).notNull().references(() => restaurantOrganizations.id),
   vendorId: varchar("vendor_id", { length: 36 }).notNull().references(() => vendors.id),
   status: text("status").notNull().default("draft"),
@@ -345,12 +344,12 @@ export const insertOrderSchema = createInsertSchema(orders).omit({
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof orders.$inferSelect;
 
-export const orderLineItems = mysqlTable("order_line_items", {
+export const orderLineItems = pgTable("order_line_items", {
   id: varchar("id", { length: 36 }).primaryKey(),
   orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id),
   productId: varchar("product_id", { length: 36 }).notNull().references(() => products.id),
-  quantity: int("quantity").notNull(),
-  unitPriceAtTimeOfOrder: decimal("unit_price_at_time_of_order", { precision: 10, scale: 2 }).notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPriceAtTimeOfOrder: numeric("unit_price_at_time_of_order", { precision: 10, scale: 2 }).notNull(),
 });
 
 export const insertOrderLineItemSchema = createInsertSchema(orderLineItems).omit({
@@ -365,17 +364,17 @@ export const insertOrderLineItemSchema = createInsertSchema(orderLineItems).omit
 export type InsertOrderLineItem = z.infer<typeof insertOrderLineItemSchema>;
 export type OrderLineItem = typeof orderLineItems.$inferSelect;
 
-export const orderLineItemFulfillments = mysqlTable("order_line_item_fulfillments", {
+export const orderLineItemFulfillments = pgTable("order_line_item_fulfillments", {
   id: varchar("id", { length: 36 }).primaryKey(),
   orderLineItemId: varchar("order_line_item_id", { length: 36 }).notNull().unique().references(() => orderLineItems.id, { onDelete: "cascade" }),
   orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id, { onDelete: "cascade" }),
-  fulfilledQuantity: int("fulfilled_quantity"),
-  loadedQuantity: int("loaded_quantity"),
-  reconciledUnitPrice: decimal("reconciled_unit_price", { precision: 10, scale: 2 }),
+  fulfilledQuantity: integer("fulfilled_quantity"),
+  loadedQuantity: integer("loaded_quantity"),
+  reconciledUnitPrice: numeric("reconciled_unit_price", { precision: 10, scale: 2 }),
   fulfillmentStatus: text("fulfillment_status"),
   issueReason: varchar("issue_reason", { length: 255 }),
   warehouseNote: varchar("warehouse_note", { length: 500 }),
-  restaurantReceivedQty: int("restaurant_received_qty"),
+  restaurantReceivedQty: integer("restaurant_received_qty"),
   restaurantNote: varchar("restaurant_note", { length: 500 }),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -397,13 +396,13 @@ export const insertLineFulfillmentSchema = createInsertSchema(orderLineItemFulfi
 export type InsertLineFulfillment = z.infer<typeof insertLineFulfillmentSchema>;
 export type LineFulfillment = typeof orderLineItemFulfillments.$inferSelect;
 
-export const orderSubstitutions = mysqlTable("order_substitutions", {
+export const orderSubstitutions = pgTable("order_substitutions", {
   id: varchar("id", { length: 36 }).primaryKey(),
   orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id, { onDelete: "cascade" }),
   orderLineItemId: varchar("order_line_item_id", { length: 36 }).notNull().references(() => orderLineItems.id, { onDelete: "cascade" }),
   originalProductId: varchar("original_product_id", { length: 36 }).notNull().references(() => products.id),
   substituteProductId: varchar("substitute_product_id", { length: 36 }).notNull().references(() => products.id),
-  proposedQty: int("proposed_qty").notNull(),
+  proposedQty: integer("proposed_qty").notNull(),
   note: text("note"),
   status: text("status").notNull().default("proposed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -422,13 +421,13 @@ export interface InvoiceLineItemSnapshot {
   restaurantNote: string | null;
 }
 
-export const invoices = mysqlTable("invoices", {
+export const invoices = pgTable("invoices", {
   id: varchar("id", { length: 36 }).primaryKey(),
   orderId: varchar("order_id", { length: 36 }).notNull().unique().references(() => orders.id),
-  displayOrderId: int("display_order_id"),
+  displayOrderId: integer("display_order_id"),
   vendorId: varchar("vendor_id", { length: 36 }).notNull().references(() => vendors.id),
   restaurantOrgId: varchar("restaurant_org_id", { length: 36 }).notNull().references(() => restaurantOrganizations.id),
-  approvedTotal: decimal("approved_total", { precision: 12, scale: 2 }).notNull(),
+  approvedTotal: numeric("approved_total", { precision: 12, scale: 2 }).notNull(),
   approvedAt: timestamp("approved_at").notNull(),
   lineItems: json("line_items").notNull().$type<InvoiceLineItemSnapshot[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -436,7 +435,7 @@ export const invoices = mysqlTable("invoices", {
 
 export type Invoice = typeof invoices.$inferSelect;
 
-export const orderSheetItems = mysqlTable("order_sheet_items", {
+export const orderSheetItems = pgTable("order_sheet_items", {
   id: varchar("id", { length: 36 }).primaryKey(),
   relationshipId: varchar("relationship_id", { length: 36 }).notNull().references(() => vendorRestaurantRelationships.id, { onDelete: "cascade" }),
   productId: varchar("product_id", { length: 36 }).notNull().references(() => products.id, { onDelete: "cascade" }),
@@ -454,13 +453,13 @@ export function formatCurrency(value: string | number | null | undefined): strin
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(num);
 }
 
-function getMysqlErrorCode(error: unknown): string | number | undefined {
+function getDbErrorCode(error: unknown): string | number | undefined {
   if (!error || typeof error !== "object") return undefined;
   const err = error as { code?: string | number; errno?: number; cause?: unknown };
-  return err.code ?? err.errno ?? getMysqlErrorCode(err.cause);
+  return err.code ?? err.errno ?? getDbErrorCode(err.cause);
 }
 
 export function isDuplicateKeyError(error: unknown): boolean {
-  const code = getMysqlErrorCode(error);
-  return code === "ER_DUP_ENTRY" || code === 1062;
+  const code = getDbErrorCode(error);
+  return code === "23505" || code === "ER_DUP_ENTRY" || code === 1062;
 }

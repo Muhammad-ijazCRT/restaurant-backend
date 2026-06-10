@@ -614,7 +614,8 @@ export class DatabaseStorage implements IStorage {
             restaurantReceivedQty: item.receivedQty,
             restaurantNote: item.note,
           })
-          .onDuplicateKeyUpdate({
+          .onConflictDoUpdate({
+            target: orderLineItemFulfillments.orderLineItemId,
             set: {
               restaurantReceivedQty: item.receivedQty,
               restaurantNote: item.note,
@@ -742,7 +743,8 @@ export class DatabaseStorage implements IStorage {
             restaurantReceivedQty: item.receivedQty,
             restaurantNote: item.note,
           })
-          .onDuplicateKeyUpdate({
+          .onConflictDoUpdate({
+            target: orderLineItemFulfillments.orderLineItemId,
             set: {
               restaurantReceivedQty: item.receivedQty,
               restaurantNote: item.note,
