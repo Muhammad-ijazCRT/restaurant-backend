@@ -24,6 +24,11 @@ import {
 } from "../../db/schema.js";
 import { z, ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
+import {
+  clearWarehousePickingFields,
+  reconcileFulfillmentsForOrder,
+  sanitizeFulfillmentsForOrder,
+} from "../../lib/order-fulfillment.js";
 import { hashPassword, resolvePortalPassword } from "../../lib/auth/password.js";
 import { normalizePortalEmail } from "../../lib/email/mailer.js";
 import {
@@ -41,6 +46,7 @@ import {
 import { buildOrderPlacedMessages } from "../../lib/activity/session-messages.js";
 import { mergeOrderNotificationMetadata } from "../../lib/activity/order-metadata.js";
 import { recordPortalActivity } from "../../lib/activity/portal-activity.js";
+import { getEffectiveLineQty } from "../../lib/restaurant-order-review.js";
 import { buildEmployeeDashboardStats, type DashboardPeriod } from "../../lib/dashboard/employee-stats.js";
 import {
   ALL_VENDOR_PERMISSION_KEYS,
@@ -62,7 +68,7 @@ import {
 } from "../../lib/permissions/restaurant-employee.js";
 import { getAuthSession } from "../../lib/auth/tokens.js";
 import type { CompatExpressApp } from "../../lib/express-compat.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { serializeEmployee, serializeRestaurantEmployee, logPortalActivity, logRestaurantReviewApproved, getOrderLogScope } from "../shared/helpers.js";
 
 export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
@@ -98,19 +104,25 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
               sku: product?.sku ?? null,
             };
           });
-          const fulfillments = await storage.getOrderFulfillments(order.id);
+          const rawFulfillments = await storage.getOrderFulfillments(order.id);
+          await reconcileFulfillmentsForOrder(order, rawFulfillments);
+          const refreshedOrder = (await storage.getOrder(order.id)) ?? order;
+          const fulfillments = sanitizeFulfillmentsForOrder(
+            refreshedOrder,
+            await storage.getOrderFulfillments(order.id),
+          );
           // Include invoice snapshot for approved/invoiced/paid orders
           let invoice =
-            order.status === "invoiced" || order.vendorApprovedAt || order.paidAt
-              ? await storage.getInvoiceByOrderId(order.id)
+            refreshedOrder.status === "invoiced" || refreshedOrder.vendorApprovedAt || refreshedOrder.paidAt
+              ? await storage.getInvoiceByOrderId(refreshedOrder.id)
               : undefined;
-          if (!invoice && (order.status === "invoiced" || order.vendorApprovedAt)) {
-            invoice = await storage.ensureInvoiceForOrder(order);
+          if (!invoice && (refreshedOrder.status === "invoiced" || refreshedOrder.vendorApprovedAt)) {
+            invoice = await storage.ensureInvoiceForOrder(refreshedOrder);
           }
           return {
-            order,
+            order: refreshedOrder,
             lineItems,
-            restaurantName: restaurantMap.get(order.restaurantOrgId) ?? "Unknown Restaurant",
+            restaurantName: restaurantMap.get(refreshedOrder.restaurantOrgId) ?? "Unknown Restaurant",
             fulfillments,
             invoice: invoice ?? null,
           };
@@ -219,6 +231,71 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
       res.status(500).json({ message: "Failed to approve order review" });
     }
   });
+
+  app.patch("/api/vendors/:vendorId/orders/:orderId/forward-review-to-driver", async (req, res) => {
+    try {
+      const { vendorId, orderId } = req.params;
+      const vendor = await storage.getVendor(vendorId);
+      if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+      const order = await storage.getOrder(orderId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
+      if (order.vendorId !== vendorId) return res.status(403).json({ message: "Access denied" });
+      if (order.restaurantIssueStatus !== "pending_vendor") {
+        return res.status(409).json({ message: "Order is not pending vendor review." });
+      }
+
+      const [updated] = await db
+        .update(orders)
+        .set({
+          restaurantIssueStatus: "pending_driver",
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId))
+        .returning();
+
+      if (!updated) return res.status(500).json({ message: "Failed to forward review to driver" });
+
+      const displayId = order.displayId ?? orderId;
+      const forwardActor = getRequestActor();
+      const forwardMessages = withActorMessages(
+        forwardActor,
+        `You forwarded restaurant review changes for order #${displayId} to the driver`,
+        `${forwardActor.name} forwarded restaurant review changes for order #${displayId} to the driver`,
+        mergeOrderNotificationMetadata(order, { displayId, orderId }),
+      );
+      logPortalActivity({
+        action: "order_review_forwarded_to_driver",
+        entityType: "order",
+        entityId: orderId,
+        entityName: forwardMessages.entityName,
+        vendorId: order.vendorId,
+        restaurantId: order.restaurantOrgId,
+        metadata: forwardMessages.metadata,
+      });
+
+      if (updated.driverId) {
+        logPortalActivity({
+          action: "order_issue_pending_driver",
+          entityType: "vendor_employee",
+          entityId: updated.driverId,
+          entityName: `${forwardActor.name} forwarded review changes on order #${displayId} — please review`,
+          vendorId: order.vendorId,
+          restaurantId: order.restaurantOrgId,
+          metadata: {
+            ...forwardMessages.metadata,
+            employeeId: updated.driverId,
+            orderId,
+            selfMessage: `Vendor forwarded restaurant review changes on order #${displayId} — please review and resolve`,
+            othersMessage: `${forwardActor.name} forwarded review changes on order #${displayId} — assigned to you for resolution`,
+          },
+        });
+      }
+
+      res.json({ order: updated });
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to forward review to driver" });
+    }
+  });
   
   app.patch("/api/restaurant-orgs/:restaurantId/orders/:orderId/pay", async (req, res) => {
     try {
@@ -290,9 +367,15 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
       });
       const allRestaurants = await storage.getRestaurantOrgs();
       const restaurantMap = new Map(allRestaurants.map(r => [r.id, r.name]));
-      const fulfillments = await storage.getOrderFulfillments(orderId);
+      const rawFulfillments = await storage.getOrderFulfillments(orderId);
+      await reconcileFulfillmentsForOrder(order, rawFulfillments);
+      const refreshedOrder = (await storage.getOrder(orderId)) ?? order;
+      const fulfillments = sanitizeFulfillmentsForOrder(
+        refreshedOrder,
+        await storage.getOrderFulfillments(orderId),
+      );
       res.json({
-        order,
+        order: refreshedOrder,
         lineItems,
         fulfillments,
         restaurantName: restaurantMap.get(order.restaurantOrgId) ?? "Unknown Restaurant",
@@ -308,7 +391,10 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
       const { vendorId, orderId } = req.params;
       const order = await storage.getOrder(orderId);
       if (!order || order.vendorId !== vendorId) return res.status(404).json({ message: "Order not found" });
-      const fulfillments = await storage.getOrderFulfillments(orderId);
+      const fulfillments = sanitizeFulfillmentsForOrder(
+        order,
+        await reconcileFulfillmentsForOrder(order, await storage.getOrderFulfillments(orderId)),
+      );
       res.json(fulfillments);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch fulfillments" });
@@ -324,13 +410,25 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
       }).parse(req.body);
       const order = await storage.getOrder(orderId);
       if (!order || order.vendorId !== vendorId) return res.status(404).json({ message: "Order not found" });
-      if (order.status !== "submitted") return res.status(409).json({ message: "Only submitted orders can be assigned." });
+      if (!["submitted", "picking_review", "ready_for_delivery"].includes(order.status)) {
+        return res.status(409).json({ message: "This order cannot be reassigned in its current status." });
+      }
+
+      const previousWorkerId = order.warehouseWorkerId ?? null;
+      const previousDriverId = order.driverId ?? null;
+      const workerChanged = previousWorkerId !== body.warehouseWorkerId;
+      const driverChanged = previousDriverId !== body.driverId;
+      if (!workerChanged && !driverChanged) {
+        return res.json(order);
+      }
+
       const [worker, driver] = await Promise.all([
         storage.getVendorEmployee(body.warehouseWorkerId),
         storage.getVendorEmployee(body.driverId),
       ]);
       if (!worker || worker.vendorId !== vendorId) return res.status(400).json({ message: "Warehouse worker not found for this vendor." });
       if (!driver || driver.vendorId !== vendorId) return res.status(400).json({ message: "Driver not found for this vendor." });
+
       const vendor = await storage.getVendor(vendorId);
       const vendorName = vendor?.name ?? "Vendor";
       const displayId = order.displayId ?? orderId;
@@ -344,19 +442,33 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
           orderId,
         },
       );
-  
+
       await db.update(orders).set({
         warehouseWorkerId: body.warehouseWorkerId,
         driverId: body.driverId,
-        pickingStatus: "assigned",
+        ...(order.status === "submitted"
+          ? { pickingStatus: "assigned" }
+          : {}),
       }).where(eq(orders.id, orderId));
-  
+
+      if (order.status === "submitted" && workerChanged) {
+        await clearWarehousePickingFields(orderId);
+      }
+
       const assignActor = getRequestActor();
+      const isReassignment = Boolean(previousWorkerId || previousDriverId);
+      const assignSummary = isReassignment
+        ? `You updated assignments for order #${displayId}: ${worker.name} (warehouse) and ${driver.name} (driver)`
+        : `You assigned order #${displayId} to ${worker.name} (warehouse) and ${driver.name} (driver)`;
+      const assignOthers = isReassignment
+        ? `${vendorName} updated assignments for order #${displayId}: ${worker.name} (warehouse) and ${driver.name} (driver)`
+        : `${vendorName} assigned order #${displayId} to ${worker.name} (warehouse) and ${driver.name} (driver)`;
+
       const assignMessages = withVendorSelfMessage(
         assignActor,
-        `You assigned order #${displayId} to ${worker.name} (warehouse) and ${driver.name} (driver)`,
-        `${vendorName} assigned order #${displayId} to ${worker.name} (warehouse) and ${driver.name} (driver)`,
-        `You assigned order #${displayId} to ${worker.name} (warehouse) and ${driver.name} (driver)`,
+        assignSummary,
+        assignOthers,
+        assignSummary,
         assignmentMeta,
       );
       await logPortalActivity({
@@ -368,51 +480,109 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
         restaurantId: order.restaurantOrgId,
         metadata: assignMessages.metadata,
       });
-  
-      const workerAssignMessages = withActorMessages(
-        { id: worker.id, name: worker.name, role: "warehouse_worker" },
-        `${vendorName} assigned you order #${displayId} (driver: ${driver.name})`,
-        `${vendorName} assigned order #${displayId} to ${worker.name} (warehouse)`,
-        {
-          ...assignmentMeta,
-          employeeId: body.warehouseWorkerId,
-          assignerId: assignActor.id,
-          assignerName: assignActor.name,
-          assignerRole: assignActor.role,
-        },
-      );
-      await logPortalActivity({
-        action: "order_assigned_worker",
-        entityType: "vendor_employee",
-        entityId: body.warehouseWorkerId,
-        entityName: workerAssignMessages.entityName,
-        vendorId: order.vendorId,
-        restaurantId: order.restaurantOrgId,
-        metadata: workerAssignMessages.metadata,
-      });
-  
-      const driverAssignMessages = withActorMessages(
-        { id: driver.id, name: driver.name, role: "driver" },
-        `${vendorName} assigned you order #${displayId} (warehouse: ${worker.name})`,
-        `${vendorName} assigned order #${displayId} to ${driver.name} (driver)`,
-        {
-          ...assignmentMeta,
-          employeeId: body.driverId,
-          assignerId: assignActor.id,
-          assignerName: assignActor.name,
-          assignerRole: assignActor.role,
-        },
-      );
-      await logPortalActivity({
-        action: "order_assigned_driver",
-        entityType: "vendor_employee",
-        entityId: body.driverId,
-        entityName: driverAssignMessages.entityName,
-        vendorId: order.vendorId,
-        restaurantId: order.restaurantOrgId,
-        metadata: driverAssignMessages.metadata,
-      });
-  
+
+      if (workerChanged) {
+        if (previousWorkerId) {
+          const previousWorker = await storage.getVendorEmployee(previousWorkerId);
+          if (previousWorker) {
+            const unassignMessages = withActorMessages(
+              { id: previousWorker.id, name: previousWorker.name, role: "warehouse_worker" },
+              `Order #${displayId} was unassigned from you`,
+              `${vendorName} unassigned order #${displayId} from ${previousWorker.name} (warehouse)`,
+              {
+                ...assignmentMeta,
+                employeeId: previousWorkerId,
+                assignerId: assignActor.id,
+                assignerName: assignActor.name,
+                assignerRole: assignActor.role,
+              },
+            );
+            await logPortalActivity({
+              action: "order_unassigned_worker",
+              entityType: "vendor_employee",
+              entityId: previousWorkerId,
+              entityName: unassignMessages.entityName,
+              vendorId: order.vendorId,
+              restaurantId: order.restaurantOrgId,
+              metadata: unassignMessages.metadata,
+            });
+          }
+        }
+
+        const workerAssignMessages = withActorMessages(
+          { id: worker.id, name: worker.name, role: "warehouse_worker" },
+          `${vendorName} assigned you order #${displayId} (driver: ${driver.name})`,
+          `${vendorName} assigned order #${displayId} to ${worker.name} (warehouse)`,
+          {
+            ...assignmentMeta,
+            employeeId: body.warehouseWorkerId,
+            assignerId: assignActor.id,
+            assignerName: assignActor.name,
+            assignerRole: assignActor.role,
+          },
+        );
+        await logPortalActivity({
+          action: "order_assigned_worker",
+          entityType: "vendor_employee",
+          entityId: body.warehouseWorkerId,
+          entityName: workerAssignMessages.entityName,
+          vendorId: order.vendorId,
+          restaurantId: order.restaurantOrgId,
+          metadata: workerAssignMessages.metadata,
+        });
+      }
+
+      if (driverChanged) {
+        if (previousDriverId) {
+          const previousDriver = await storage.getVendorEmployee(previousDriverId);
+          if (previousDriver) {
+            const unassignMessages = withActorMessages(
+              { id: previousDriver.id, name: previousDriver.name, role: "driver" },
+              `Order #${displayId} was unassigned from you`,
+              `${vendorName} unassigned order #${displayId} from ${previousDriver.name} (driver)`,
+              {
+                ...assignmentMeta,
+                employeeId: previousDriverId,
+                assignerId: assignActor.id,
+                assignerName: assignActor.name,
+                assignerRole: assignActor.role,
+              },
+            );
+            await logPortalActivity({
+              action: "order_unassigned_driver",
+              entityType: "vendor_employee",
+              entityId: previousDriverId,
+              entityName: unassignMessages.entityName,
+              vendorId: order.vendorId,
+              restaurantId: order.restaurantOrgId,
+              metadata: unassignMessages.metadata,
+            });
+          }
+        }
+
+        const driverAssignMessages = withActorMessages(
+          { id: driver.id, name: driver.name, role: "driver" },
+          `${vendorName} assigned you order #${displayId} (warehouse: ${worker.name})`,
+          `${vendorName} assigned order #${displayId} to ${driver.name} (driver)`,
+          {
+            ...assignmentMeta,
+            employeeId: body.driverId,
+            assignerId: assignActor.id,
+            assignerName: assignActor.name,
+            assignerRole: assignActor.role,
+          },
+        );
+        await logPortalActivity({
+          action: "order_assigned_driver",
+          entityType: "vendor_employee",
+          entityId: body.driverId,
+          entityName: driverAssignMessages.entityName,
+          vendorId: order.vendorId,
+          restaurantId: order.restaurantOrgId,
+          metadata: driverAssignMessages.metadata,
+        });
+      }
+
       res.json(await storage.getOrder(orderId));
     } catch (error) {
       if (error instanceof ZodError) return res.status(400).json({ message: fromZodError(error).message });
@@ -429,59 +599,136 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
           status: z.enum(["loaded", "partial", "no_stock"]),
           loadedQty: z.number().int().min(0),
           note: z.string().max(500).optional().nullable(),
+          warehouseTouched: z.boolean().optional(),
         })).min(1),
         submitForReview: z.boolean().optional(),
+        vendorAdjust: z.boolean().optional(),
       }).parse(req.body);
       const order = await storage.getOrder(orderId);
       if (!order || order.vendorId !== vendorId) return res.status(404).json({ message: "Order not found" });
-      if (!order.warehouseWorkerId) return res.status(409).json({ message: "Assign a warehouse worker before picking." });
+
+      const actor = getRequestActor();
+      const actorRole = actor.role === "warehouse" ? "warehouse_worker" : actor.role;
+      const isVendorManager =
+        actorRole === "vendor_admin" || actorRole === "vendor" || actorRole === "manager";
+      const wantsVendorAdjust = body.vendorAdjust === true;
+      const canAdjustWithoutAssignment = isVendorManager && order.status === "submitted";
+      const isManagerAdjust = canAdjustWithoutAssignment;
+
+      if (wantsVendorAdjust) {
+        if (actorRole === "guest" || actorRole === "system") {
+          return res.status(401).json({ message: "You must be logged in to save vendor adjustments." });
+        }
+        if (!isVendorManager) {
+          return res.status(403).json({ message: "Only vendor managers can save vendor adjustments." });
+        }
+        if (order.status !== "submitted") {
+          return res.status(409).json({ message: "Vendor adjustments can only be saved on submitted orders." });
+        }
+      }
+
+      if (!order.warehouseWorkerId && !canAdjustWithoutAssignment) {
+        return res.status(409).json({ message: "Assign a warehouse worker before picking." });
+      }
+
       const lineItems = await storage.getOrderLineItems(orderId);
       const validLineItemIds = new Set(lineItems.map((item) => item.id));
       for (const item of body.items) {
         if (!validLineItemIds.has(item.lineItemId)) return res.status(400).json({ message: "One or more line items do not belong to this order." });
       }
   
+      let persistedItemCount = 0;
+
       await db.transaction(async (tx) => {
         for (const item of body.items) {
-          await tx.insert(orderLineItemFulfillments).values({
-            id: newId(),
-            orderLineItemId: item.lineItemId,
-            orderId,
-            loadedQuantity: item.loadedQty,
-            fulfilledQuantity: item.loadedQty,
-            fulfillmentStatus: item.status,
-            warehouseNote: item.note ?? null,
-          }).onConflictDoUpdate({
-            target: orderLineItemFulfillments.orderLineItemId,
-            set: {
-              loadedQuantity: item.loadedQty,
+          if (isManagerAdjust) {
+            await tx.insert(orderLineItemFulfillments).values({
+              id: newId(),
+              orderLineItemId: item.lineItemId,
+              orderId,
               fulfilledQuantity: item.loadedQty,
+              warehouseNote: item.note?.trim() ? item.note.trim() : null,
               fulfillmentStatus: item.status,
-              warehouseNote: item.note ?? null,
+            }).onConflictDoUpdate({
+              target: orderLineItemFulfillments.orderLineItemId,
+              set: {
+                fulfilledQuantity: item.loadedQty,
+                warehouseNote: item.note?.trim() ? item.note.trim() : null,
+                fulfillmentStatus: item.status,
+                updatedAt: new Date(),
+              },
+            });
+            persistedItemCount += 1;
+          } else {
+            if (!item.warehouseTouched) {
+              continue;
+            }
+            await tx.insert(orderLineItemFulfillments).values({
+              id: newId(),
+              orderLineItemId: item.lineItemId,
+              orderId,
+              loadedQuantity: item.loadedQty,
+              fulfillmentStatus: item.status,
+              issueReason: item.note?.trim() ? item.note.trim() : null,
+            }).onConflictDoUpdate({
+              target: orderLineItemFulfillments.orderLineItemId,
+              set: {
+                loadedQuantity: item.loadedQty,
+                fulfillmentStatus: item.status,
+                issueReason: item.note?.trim() ? item.note.trim() : null,
+                updatedAt: new Date(),
+              },
+            });
+            persistedItemCount += 1;
+          }
+        }
+        if (isManagerAdjust && order.warehouseWorkerId) {
+          await tx
+            .update(orderLineItemFulfillments)
+            .set({
+              loadedQuantity: null,
+              issueReason: null,
               updatedAt: new Date(),
-            },
-          });
+            })
+            .where(eq(orderLineItemFulfillments.orderId, orderId));
         }
         await tx.update(orders)
-          .set({ 
-            pickingStatus: body.submitForReview ? "review" : "in_progress",
-            ...(body.submitForReview ? { status: "picking_review" } : {})
+          .set({
+            ...(order.warehouseWorkerId
+              ? {
+                  pickingStatus: body.submitForReview
+                    ? "review"
+                    : isManagerAdjust
+                      ? "assigned"
+                      : "in_progress",
+                  ...(body.submitForReview ? { status: "picking_review" } : {}),
+                }
+              : {}),
           })
           .where(eq(orders.id, orderId));
       });
-  
+
+      if (persistedItemCount === 0) {
+        return res.status(400).json({
+          message: wantsVendorAdjust
+            ? "Vendor adjustments could not be saved. Please sign in again and retry."
+            : "No picking changes to save. Update loaded qty or add a worker note first.",
+        });
+      }
+
       const updatedOrder = await storage.getOrder(orderId);
       const displayId = updatedOrder?.displayId ?? orderId;
       const picker = order.warehouseWorkerId
         ? await storage.getVendorEmployee(order.warehouseWorkerId)
         : undefined;
-      const actor = getRequestActor();
+      const pickerActor: ActivityActor = picker
+        ? { id: picker.id, name: picker.name, role: "warehouse_worker" }
+        : {
+            id: actor.id,
+            name: actor.name,
+            role: actorRole,
+          };
       const pickerName = picker?.name ?? actor.name;
-      const pickerActor: ActivityActor = {
-        id: picker?.id ?? actor.id,
-        name: pickerName,
-        role: "warehouse_worker",
-      };
       const pickMeta = mergeOrderNotificationMetadata(order, {
         orderId,
         itemCount: body.items.length,
@@ -540,7 +787,10 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
   
       res.json({
         order: updatedOrder,
-        fulfillments: await storage.getOrderFulfillments(orderId),
+        fulfillments: sanitizeFulfillmentsForOrder(
+          updatedOrder ?? order,
+          await storage.getOrderFulfillments(orderId),
+        ),
       });
     } catch (error) {
       if (error instanceof ZodError) return res.status(400).json({ message: fromZodError(error).message });
@@ -576,7 +826,34 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
         restaurantId: order.restaurantOrgId,
         metadata: approveMessages.metadata,
       });
-      res.json(await storage.getOrder(orderId));
+      const updatedOrder = await storage.getOrder(orderId);
+      if (updatedOrder?.driverId) {
+        const driver = await storage.getVendorEmployee(updatedOrder.driverId);
+        const vendor = await storage.getVendor(vendorId);
+        const vendorName = vendor?.name ?? "Vendor";
+        if (driver) {
+          const driverMessages = withActorMessages(
+            { id: driver.id, name: driver.name, role: "driver" },
+            `${vendorName} released order #${displayId} — ready for delivery`,
+            `${approver.name} released order #${displayId} to ${driver.name} for delivery`,
+            mergeOrderNotificationMetadata(updatedOrder, {
+              displayId,
+              employeeId: driver.id,
+              driverName: driver.name,
+            }),
+          );
+          await logPortalActivity({
+            action: "order_picking_approved",
+            entityType: "vendor_employee",
+            entityId: driver.id,
+            entityName: driverMessages.entityName,
+            vendorId: updatedOrder.vendorId,
+            restaurantId: updatedOrder.restaurantOrgId,
+            metadata: driverMessages.metadata,
+          });
+        }
+      }
+      res.json(updatedOrder ?? await storage.getOrder(orderId));
     } catch {
       res.status(500).json({ message: "Failed to approve picking" });
     }
@@ -637,7 +914,9 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
       const { vendorId, orderId } = req.params;
       const vendor = await storage.getVendor(vendorId);
       if (!vendor) return res.status(404).json({ message: "Vendor not found" });
-      const body = z.object({ note: z.string().max(1000).optional().nullable() }).parse(req.body ?? {});
+      const body = z.object({
+        note: z.string().trim().min(1, "Driver delivery note is required").max(1000),
+      }).parse(req.body ?? {});
       const order = await storage.getOrder(orderId);
       if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.vendorId !== vendorId) return res.status(403).json({ message: "Access denied" });
@@ -647,7 +926,7 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
       await db.update(orders).set({
         status: "delivered",
         vendorConfirmedAt: new Date(),
-        driverNote: body.note ?? null,
+        driverNote: body.note,
       }).where(and(eq(orders.id, orderId), eq(orders.vendorId, vendorId)));
       const updated = await storage.getOrder(orderId);
       if (updated) {
@@ -722,7 +1001,8 @@ export function registerVendorProductOrderRoutes(app: CompatExpressApp) {
   
         const snapshotLineItems: InvoiceLineItemSnapshot[] = lineItems.map(li => {
           const f = fulfillmentMap.get(li.id);
-          const approvedQty = f?.restaurantReceivedQty ?? li.quantity;
+          const expectedQty = getEffectiveLineQty(f, li.quantity, currentOrder);
+          const approvedQty = f?.restaurantReceivedQty ?? expectedQty;
           const unitPrice = li.unitPriceAtTimeOfOrder;
           const lineTotal = (parseFloat(unitPrice) * approvedQty).toFixed(2);
           const product = productMap.get(li.productId);

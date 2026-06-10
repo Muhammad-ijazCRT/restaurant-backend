@@ -3,14 +3,14 @@ import type { ActivityLog } from "../../db/schema.js";
 export type VendorEmployeeNotificationRole = "warehouse_worker" | "driver";
 
 const WORKER_EMPLOYEE_ACTIONS = new Set([
-  "employee_profile_updated",
   "order_assigned_worker",
+  "order_unassigned_worker",
   "order_picking_submitted_worker",
 ]);
 
 const DRIVER_EMPLOYEE_ACTIONS = new Set([
-  "employee_profile_updated",
   "order_assigned_driver",
+  "order_unassigned_driver",
   "order_issue_pending_driver",
   "order_delivered_driver",
   "order_issue_resolved_driver",
@@ -24,8 +24,21 @@ export const AUDIT_ONLY_LOGIN_ACTIONS = new Set([
   "super_admin_logged_in",
 ]);
 
+/** Profile update events — super-admin activity log only, never in portal bells. */
+export const AUDIT_ONLY_PROFILE_ACTIONS = new Set([
+  "super_admin_profile_updated",
+  "restaurant_profile_updated",
+  "vendor_profile_updated",
+  "employee_profile_updated",
+  "profile_updated",
+]);
+
 export function isPortalLoginActivity(log: ActivityLog): boolean {
   return AUDIT_ONLY_LOGIN_ACTIONS.has(log.action);
+}
+
+export function isPortalProfileActivity(log: ActivityLog): boolean {
+  return AUDIT_ONLY_PROFILE_ACTIONS.has(log.action) || log.action.endsWith("_profile_updated");
 }
 
 export function isOwnEmployeeLogin(log: ActivityLog, userId: string): boolean {
@@ -62,8 +75,8 @@ export function isOwnPortalLogin(log: ActivityLog, userId: string): boolean {
   );
 }
 
-function isOwnProfileUpdate(log: ActivityLog, userId: string): boolean {
-  return log.action.endsWith("_profile_updated") && normalizeId(log.entityId) === normalizeId(userId);
+function isAuditOnlyPortalActivity(log: ActivityLog): boolean {
+  return isPortalLoginActivity(log) || isPortalProfileActivity(log);
 }
 
 /** Order-level logs for workers — picking submit uses order_picking_submitted_worker only (no duplicate). */
@@ -182,8 +195,7 @@ export function filterVendorEmployeeNotifications(
   orderById: Map<string, OrderAssignment>,
 ): ActivityLog[] {
   return logs.filter((log) => {
-    if (isPortalLoginActivity(log)) return false;
-    if (isOwnProfileUpdate(log, userId)) return true;
+    if (isAuditOnlyPortalActivity(log)) return false;
     if (isEmployeeDirectNotification(log, role, userId)) return true;
     return matchesOrderRole(log, role, userId, orderById);
   });
@@ -203,6 +215,8 @@ const VENDOR_PORTAL_ORDER_ACTIONS = new Set([
   "order_substitution_status_updated",
   "order_delivered",
   "order_issue_reported",
+  "order_issue_pending_vendor",
+  "order_review_forwarded_to_driver",
   "order_issue_resolved",
   "order_review_submitted",
   "order_review_resubmitted",
@@ -218,31 +232,35 @@ const VENDOR_PORTAL_ORDER_ACTIONS = new Set([
 const EMPLOYEE_TARGETED_ACTIONS = new Set([
   "order_assigned_worker",
   "order_assigned_driver",
+  "order_unassigned_worker",
+  "order_unassigned_driver",
   "order_picking_submitted_worker",
   "order_issue_pending_driver",
   "order_delivered_driver",
   "order_issue_resolved_driver",
 ]);
 
-export function filterRestaurantNotifications(logs: ActivityLog[], userId: string): ActivityLog[] {
+export function filterRestaurantNotifications(logs: ActivityLog[], _userId: string): ActivityLog[] {
   return logs.filter((log) => {
-    if (isPortalLoginActivity(log)) return false;
-    if (isOwnProfileUpdate(log, userId)) return true;
+    if (isAuditOnlyPortalActivity(log)) return false;
     if (EMPLOYEE_TARGETED_ACTIONS.has(log.action)) return false;
     return true;
   });
 }
 
-export function filterManagerNotifications(logs: ActivityLog[], userId: string): ActivityLog[] {
+export function filterManagerNotifications(logs: ActivityLog[], _userId: string): ActivityLog[] {
   return logs.filter((log) => {
-    if (isPortalLoginActivity(log)) return false;
-    if (isOwnProfileUpdate(log, userId)) return true;
+    if (isAuditOnlyPortalActivity(log)) return false;
     if (MANAGER_EXCLUDED_ACTIONS.has(log.action)) return false;
     if (EMPLOYEE_TARGETED_ACTIONS.has(log.action)) return false;
     if (log.entityType === "order") return VENDOR_PORTAL_ORDER_ACTIONS.has(log.action);
-    if (log.entityType === "vendor" || log.entityType === "vendor_employee") return true;
+    if (log.entityType === "vendor" || log.entityType === "vendor_employee") {
+      return !isPortalProfileActivity(log);
+    }
     if (log.entityType === "relationship" || log.entityType === "product") return true;
-    return log.action.startsWith("vendor_") || log.action.startsWith("employee_");
+    if (log.action.startsWith("vendor_")) return true;
+    if (log.action.startsWith("employee_")) return !isPortalProfileActivity(log);
+    return false;
   });
 }
 
@@ -250,14 +268,15 @@ const SUPER_ADMIN_EXCLUDED_ACTIONS = EMPLOYEE_TARGETED_ACTIONS;
 
 export function filterSuperAdminNotifications(logs: ActivityLog[]): ActivityLog[] {
   return logs.filter(
-    (log) => !SUPER_ADMIN_EXCLUDED_ACTIONS.has(log.action) && !isPortalLoginActivity(log),
+    (log) =>
+      !SUPER_ADMIN_EXCLUDED_ACTIONS.has(log.action) &&
+      !isAuditOnlyPortalActivity(log),
   );
 }
 
-export function filterVendorAdminNotifications(logs: ActivityLog[], userId: string): ActivityLog[] {
+export function filterVendorAdminNotifications(logs: ActivityLog[], _userId: string): ActivityLog[] {
   return logs.filter((log) => {
-    if (isPortalLoginActivity(log)) return false;
-    if (isOwnProfileUpdate(log, userId)) return true;
+    if (isAuditOnlyPortalActivity(log)) return false;
     if (EMPLOYEE_TARGETED_ACTIONS.has(log.action)) return false;
     if (log.entityType === "order") return VENDOR_PORTAL_ORDER_ACTIONS.has(log.action);
     if (log.entityType === "relationship" || log.entityType === "product") return true;

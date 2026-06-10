@@ -17,7 +17,6 @@ import { desc, eq, or, and, not, inArray } from "drizzle-orm";
 import {
   filterManagerNotifications,
   filterRestaurantNotifications,
-  filterSuperAdminNotifications,
   filterVendorAdminNotifications,
   filterVendorEmployeeNotifications,
   normalizeNotificationRole,
@@ -232,6 +231,22 @@ export function registerProfileRoutes(app: CompatExpressApp) {
     return employee?.vendorId ?? undefined;
   }
 
+  async function resolveSessionRestaurantId(role: string, userId: string): Promise<string | undefined> {
+    if (role === "restaurant") return userId;
+    if (!userId) return undefined;
+
+    const [employee] = await db
+      .select()
+      .from(restaurantEmployees)
+      .where(eq(restaurantEmployees.id, userId))
+      .limit(1);
+    return employee?.restaurantOrgId ?? undefined;
+  }
+
+  function isRestaurantPortalRole(role: string): boolean {
+    return role === "restaurant" || role === "restaurant_manager" || role === "restaurant_employee";
+  }
+
   app.get("/api/notifications", requireAuth, async (req: any, res: any) => {
     const { userId, vendorId } = req.session;
     const role = normalizeNotificationRole(req.session.role);
@@ -245,15 +260,23 @@ export function registerProfileRoutes(app: CompatExpressApp) {
       );
 
       if (role === "super_admin") {
-        logs = await db.select().from(activityLogs).where(crudFilter).orderBy(desc(activityLogs.createdAt));
-        logs = filterSuperAdminNotifications(logs);
-        total = logs.length;
-      } else if (role === "restaurant") {
-        logs = await db.select().from(activityLogs)
-          .where(and(eq(activityLogs.restaurantId, userId), crudFilter))
-          .orderBy(desc(activityLogs.createdAt));
-        logs = filterRestaurantNotifications(logs, userId);
-        total = logs.length;
+        logs = [];
+        total = 0;
+      } else if (isRestaurantPortalRole(role)) {
+        const restaurantOrgId = await resolveSessionRestaurantId(role, userId);
+        if (!restaurantOrgId) {
+          logs = [];
+          total = 0;
+        } else {
+          logs = await db
+            .select()
+            .from(activityLogs)
+            .where(and(eq(activityLogs.restaurantId, restaurantOrgId), crudFilter))
+            .orderBy(desc(activityLogs.createdAt))
+            .limit(200);
+          logs = filterRestaurantNotifications(logs, userId);
+          total = logs.length;
+        }
       } else {
         const effectiveVendorId = await resolveSessionVendorId(role, userId, vendorId);
         if (!effectiveVendorId) {
@@ -289,9 +312,12 @@ export function registerProfileRoutes(app: CompatExpressApp) {
                 )
               : vendorScope;
 
-          logs = await db.select().from(activityLogs)
+          logs = await db
+            .select()
+            .from(activityLogs)
             .where(and(scopeFilter, crudFilter))
-            .orderBy(desc(activityLogs.createdAt));
+            .orderBy(desc(activityLogs.createdAt))
+            .limit(200);
 
           if (role === "vendor_admin") {
             logs = filterVendorAdminNotifications(logs, userId);

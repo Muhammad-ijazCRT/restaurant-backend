@@ -244,7 +244,7 @@ export function registerRestaurantOrderRoutes(app: CompatExpressApp) {
           order.displayId ?? order.id,
           { itemCount: createdLineItems.length, vendorId: body.vendorId },
         );
-        logPortalActivity({
+        await logPortalActivity({
           action: "order_submitted",
           entityType: "order",
           entityId: order.id,
@@ -339,7 +339,7 @@ export function registerRestaurantOrderRoutes(app: CompatExpressApp) {
             submitted.displayId ?? submitted.id,
             { itemCount: finalLineItems.length },
           );
-          logPortalActivity({
+          await logPortalActivity({
             action: "order_submitted",
             entityType: "order",
             entityId: orderId,

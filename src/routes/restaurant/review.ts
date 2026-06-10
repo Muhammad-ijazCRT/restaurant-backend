@@ -64,6 +64,10 @@ import { getAuthSession } from "../../lib/auth/tokens.js";
 import type { CompatExpressApp } from "../../lib/express-compat.js";
 import { eq, and } from "drizzle-orm";
 import { serializeEmployee, serializeRestaurantEmployee, logPortalActivity, logRestaurantReviewApproved, getOrderLogScope } from "../shared/helpers.js";
+import {
+  getEffectiveLineQty,
+  hasRestaurantReviewAdjustment,
+} from "../../lib/restaurant-order-review.js";
 
 export function registerRestaurantReviewRoutes(app: CompatExpressApp) {
   // --- Order Review (Restaurant side) ---
@@ -147,59 +151,6 @@ export function registerRestaurantReviewRoutes(app: CompatExpressApp) {
         return res.status(404).json({ message: "Order not found" });
       }
       const body = reviewBodySchema.parse(req.body);
-      if (body.reportIssue) {
-        await db.update(orders).set({
-          restaurantReviewSubmittedAt: new Date(),
-          restaurantIssueStatus: "pending_driver",
-          vendorApprovedAt: null,
-          vendorRejectedAt: null,
-          vendorRejectionReason: null,
-          driverResolvedAt: null,
-          driverResolutionNote: null,
-        }).where(eq(orders.id, orderId));
-        const displayId = order.displayId ?? orderId;
-        const restaurantOrg = await storage.getRestaurantOrg(restaurantId);
-        const restaurantActor: ActivityActor = {
-          id: restaurantId,
-          name: restaurantOrg?.name ?? "Restaurant",
-          role: "restaurant",
-        };
-        const issueMessages = withActorMessages(
-          restaurantActor,
-          `You reported a delivery issue for order #${displayId}`,
-          `${restaurantActor.name} reported a delivery issue for order #${displayId} — driver review required`,
-          mergeOrderNotificationMetadata(order, { displayId }),
-        );
-        await logPortalActivity({
-          action: "order_issue_reported",
-          entityType: "order",
-          entityId: orderId,
-          entityName: issueMessages.entityName,
-          vendorId: order.vendorId,
-          restaurantId: order.restaurantOrgId,
-          metadata: issueMessages.metadata,
-        });
-        if (order.driverId) {
-          logPortalActivity({
-            action: "order_issue_pending_driver",
-            entityType: "vendor_employee",
-            entityId: order.driverId,
-            entityName: `${restaurantActor.name} reported an issue on order #${displayId} — please review`,
-            vendorId: order.vendorId,
-            restaurantId: order.restaurantOrgId,
-            metadata: {
-              ...issueMessages.metadata,
-              employeeId: order.driverId,
-              orderId,
-              selfMessage: `Restaurant reported an issue on order #${displayId} — please review and resolve`,
-              othersMessage: `${restaurantActor.name} reported an issue on order #${displayId} — assigned to you for resolution`,
-            },
-          });
-        }
-        const refreshedOrder = await storage.getOrder(orderId);
-        const fulfillments = await storage.getOrderFulfillments(orderId);
-        return res.json({ order: refreshedOrder, fulfillments });
-      }
       if (!body.reportIssue && (order.vendorApprovedAt || order.status === "invoiced")) {
         const patch: Record<string, unknown> = {};
         if (order.status !== "invoiced") patch.status = "invoiced";
@@ -249,39 +200,46 @@ export function registerRestaurantReviewRoutes(app: CompatExpressApp) {
             });
         }
   
+        const fulfillmentRows = await tx.select().from(orderLineItemFulfillments).where(eq(orderLineItemFulfillments.orderId, orderId));
+        const fulfillmentMap = new Map(fulfillmentRows.map(f => [f.orderLineItemId, f]));
+        const needsVendorReview =
+          body.reportIssue ||
+          hasRestaurantReviewAdjustment(ownedLineItems, fulfillmentMap, body.items, order);
+
         await tx.update(orders)
           .set({
             restaurantReviewSubmittedAt: new Date(),
-            restaurantIssueStatus: body.reportIssue ? "pending_driver" : null,
+            restaurantIssueStatus: needsVendorReview ? "pending_vendor" : null,
+            ...(needsVendorReview
+              ? {
+                  status: "delivered",
+                  vendorApprovedAt: null,
+                  vendorRejectedAt: null,
+                  vendorRejectionReason: null,
+                  driverResolutionNote: null,
+                  driverResolvedAt: null,
+                }
+              : {}),
           })
           .where(eq(orders.id, orderId));
-  
-        if (body.reportIssue) {
-          await tx.update(orders).set({
-            status: "delivered",
-            vendorApprovedAt: null,
-            vendorRejectedAt: null,
-            vendorRejectionReason: null,
-            driverResolutionNote: null,
-            driverResolvedAt: null,
-          }).where(eq(orders.id, orderId));
+
+        if (needsVendorReview) {
           const [pendingOrder] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
           if (!pendingOrder) throw new Error("Order not found");
-          return pendingOrder;
+          return { pendingVendorReview: true as const, order: pendingOrder };
         }
-  
+
         const refreshedOrder = await storage.getOrder(orderId);
         if (!refreshedOrder) throw new Error("Order not found");
-  
-        const fulfillmentRows = await tx.select().from(orderLineItemFulfillments).where(eq(orderLineItemFulfillments.orderId, orderId));
+
         const allVendorProducts = await tx.select().from(products).where(eq(products.vendorId, order.vendorId));
         const acceptedSubstitutions = await tx.select().from(orderSubstitutions).where(and(eq(orderSubstitutions.orderId, orderId), eq(orderSubstitutions.status, "accepted")));
-        const fulfillmentMap = new Map(fulfillmentRows.map(f => [f.orderLineItemId, f]));
         const productMap = new Map(allVendorProducts.map(p => [p.id, p]));
-  
+
         const snapshotLineItems = ownedLineItems.map(li => {
           const f = fulfillmentMap.get(li.id);
-          const approvedQty = f?.restaurantReceivedQty ?? li.quantity;
+          const expectedQty = getEffectiveLineQty(f, li.quantity, order);
+          const approvedQty = f?.restaurantReceivedQty ?? expectedQty;
           const unitPrice = li.unitPriceAtTimeOfOrder;
           return {
             orderLineItemId: li.id,
@@ -333,13 +291,41 @@ export function registerRestaurantReviewRoutes(app: CompatExpressApp) {
         }
         return { order: refreshedOrder, approvedTotal, lineItemCount: snapshotLineItems.length };
       });
+
+      if ("pendingVendorReview" in updatedOrder && updatedOrder.pendingVendorReview) {
+        const displayId = order.displayId ?? orderId;
+        const restaurantOrg = await storage.getRestaurantOrg(restaurantId);
+        const restaurantActor: ActivityActor = {
+          id: restaurantId,
+          name: restaurantOrg?.name ?? "Restaurant",
+          role: "restaurant",
+        };
+        const issueMessages = withActorMessages(
+          restaurantActor,
+          `You submitted a review with quantity changes for order #${displayId}`,
+          `${restaurantActor.name} submitted a review with quantity changes for order #${displayId} — vendor review required`,
+          mergeOrderNotificationMetadata(order, { displayId }),
+        );
+        await logPortalActivity({
+          action: "order_issue_pending_vendor",
+          entityType: "order",
+          entityId: orderId,
+          entityName: issueMessages.entityName,
+          vendorId: order.vendorId,
+          restaurantId: order.restaurantOrgId,
+          metadata: issueMessages.metadata,
+        });
+        const fulfillments = await storage.getOrderFulfillments(orderId);
+        return res.json({ order: updatedOrder.order, fulfillments, pendingVendorReview: true });
+      }
+
       const finalizedOrder = (await storage.getOrder(orderId)) ?? updatedOrder.order;
       await logRestaurantReviewApproved(finalizedOrder, restaurantId, {
         approvedTotal: updatedOrder.approvedTotal,
         lineItemCount: updatedOrder.lineItemCount,
       });
       const fulfillments = await storage.getOrderFulfillments(orderId);
-      res.json({ order: finalizedOrder, fulfillments });
+      res.json({ order: finalizedOrder, fulfillments, invoiced: true });
     } catch (error: any) {
       if (error instanceof ZodError) {
         return res.status(400).json({ message: fromZodError(error).message });

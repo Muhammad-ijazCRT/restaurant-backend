@@ -49,6 +49,7 @@ export function buildOrderPlacedMessages(
   const metadata = buildActorMetadata(actor, {
     selfMessage: `You placed order #${displayId}`,
     othersMessage: `Order placed: #${displayId} by ${restaurant.name}`,
+    vendorSelfMessage: `New order #${displayId} from ${restaurant.name}`,
     extra: { restaurantName: restaurant.name, displayId, ...extra },
   });
   return {

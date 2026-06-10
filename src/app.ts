@@ -81,19 +81,20 @@ export async function buildApp() {
     const token = authHeader?.split(" ")[1];
     const session = getAuthSession(token);
 
-    return new Promise<void>((resolve) => {
-      if (session) {
-        requestContext.run(
-          { userId: session.userId, userName: session.name, userRole: session.role },
-          resolve,
-        );
-      } else {
-        requestContext.run(
-          { userId: "anonymous", userName: "Anonymous", userRole: "guest" },
-          resolve,
-        );
-      }
-    });
+    // enterWith keeps auth context alive for the full async request (run+resolve only covered the hook).
+    if (session) {
+      requestContext.enterWith({
+        userId: session.userId,
+        userName: session.name,
+        userRole: session.role,
+      });
+    } else {
+      requestContext.enterWith({
+        userId: "anonymous",
+        userName: "Anonymous",
+        userRole: "guest",
+      });
+    }
   });
 
   app.addHook("onResponse", async (request, reply) => {
