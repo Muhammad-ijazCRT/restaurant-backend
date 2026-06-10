@@ -1,0 +1,12 @@
+# Force Railway/Nixpacks to build and run THIS Fastify API (not any legacy index.js app).
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run start:prod"
