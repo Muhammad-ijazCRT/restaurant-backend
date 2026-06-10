@@ -429,8 +429,14 @@ function workerOrderBuckets(employeeOrders: Order[]) {
 }
 
 function driverOrderFilters(employeeOrders: Order[]) {
+  const activeAssignments = employeeOrders.filter(
+    (o) => !["delivered", "invoiced"].includes(o.status),
+  );
   return {
-    readyForDelivery: employeeOrders.filter((o) => o.status === "ready_for_delivery"),
+    activeAssignments,
+    readyForDelivery: employeeOrders.filter(
+      (o) => o.status === "ready_for_delivery" || o.restaurantIssueStatus === "pending_driver",
+    ),
     delivered: employeeOrders.filter((o) => ["delivered", "invoiced"].includes(o.status)),
     issuePending: employeeOrders.filter((o) => o.restaurantIssueStatus === "pending_driver"),
     issueResolved: employeeOrders.filter(
@@ -442,6 +448,7 @@ function driverOrderFilters(employeeOrders: Order[]) {
 function driverOrderBuckets(employeeOrders: Order[]) {
   const filters = driverOrderFilters(employeeOrders);
   return {
+    activeAssignments: filters.activeAssignments.length,
     readyForDelivery: filters.readyForDelivery.length,
     delivered: filters.delivered.length,
     issuePending: filters.issuePending.length,
@@ -462,6 +469,7 @@ function driverOrderLabel(order: Order): string {
   if (order.restaurantIssueStatus === "resolved_by_driver") return "Issue resolved";
   if (order.status === "ready_for_delivery") return "Ready to deliver";
   if (["delivered", "invoiced"].includes(order.status)) return "Delivered";
+  if (order.status === "submitted") return "Assigned — waiting for warehouse";
   return order.status.replace(/_/g, " ");
 }
 
@@ -717,6 +725,7 @@ export async function buildEmployeeDashboardStats(options: {
         assignedBy: assignment.assignedBy,
         assignedCompleted: assignment.completedCount,
         assignedCompletedBy: assignment.completedBy,
+        activeAssignments: buckets.activeAssignments,
         readyForDelivery: buckets.readyForDelivery,
         delivered: buckets.delivered,
         deliveredInPeriod: periodDeliveredCount(myOrders, start),
@@ -727,6 +736,9 @@ export async function buildEmployeeDashboardStats(options: {
       details: {
         assigned: buildAssignedRows(assignment.events, ordersById, restaurantMap),
         assignedCompleted: buildAssignedRows(assignment.completedEvents, ordersById, restaurantMap),
+        activeAssignments: filters.activeAssignments.map((o) =>
+          mapOrderRow(o, restaurantMap, driverOrderLabel(o), o.createdAt),
+        ),
         readyForDelivery: filters.readyForDelivery.map((o) =>
           mapOrderRow(o, restaurantMap, driverOrderLabel(o), o.readyForDeliveryAt ?? o.createdAt),
         ),
