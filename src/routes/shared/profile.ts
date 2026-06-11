@@ -10,7 +10,7 @@ import {
   notificationClearances,
 } from "../../db/schema.js";
 import {
-  buildNotificationViewerKey,
+  buildPortalNotificationViewerKey,
   countUnreadNotifications,
 } from "../../lib/notifications/clearance.js";
 import { desc, eq, or, and, not, inArray } from "drizzle-orm";
@@ -247,6 +247,25 @@ export function registerProfileRoutes(app: CompatExpressApp) {
     return role === "restaurant" || role === "restaurant_manager" || role === "restaurant_employee";
   }
 
+  async function resolveNotificationViewerKey(
+    role: string,
+    userId: string,
+    vendorId?: string,
+  ): Promise<string> {
+    const restaurantOrgId = isRestaurantPortalRole(role)
+      ? await resolveSessionRestaurantId(role, userId)
+      : undefined;
+    const effectiveVendorId =
+      role === "vendor_admin" || role === "manager" || role === "sales_representative"
+        ? await resolveSessionVendorId(role, userId, vendorId)
+        : undefined;
+
+    return buildPortalNotificationViewerKey(role, userId, {
+      restaurantOrgId,
+      vendorId: effectiveVendorId,
+    });
+  }
+
   app.get("/api/notifications", requireAuth, async (req: any, res: any) => {
     const { userId, vendorId } = req.session;
     const role = normalizeNotificationRole(req.session.role);
@@ -382,7 +401,7 @@ export function registerProfileRoutes(app: CompatExpressApp) {
         }
       }
 
-      const viewerKey = buildNotificationViewerKey(role, userId);
+      const viewerKey = await resolveNotificationViewerKey(role, userId, vendorId);
       let clearedAt: Date | null = null;
       try {
         const [clearance] = await db
@@ -409,10 +428,10 @@ export function registerProfileRoutes(app: CompatExpressApp) {
   });
 
   app.post("/api/notifications/clear", requireAuth, async (req: any, res: any) => {
-    const { userId } = req.session;
+    const { userId, vendorId } = req.session;
     const role = normalizeNotificationRole(req.session.role);
     try {
-      const viewerKey = buildNotificationViewerKey(role, userId);
+      const viewerKey = await resolveNotificationViewerKey(role, userId, vendorId);
       const clearedAt = new Date();
       await db
         .insert(notificationClearances)

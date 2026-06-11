@@ -80,34 +80,17 @@ async function logRestaurantReviewApproved(
     restaurantActor,
     `You submitted the review for order #${displayId} — invoice created`,
     `${restaurantActor.name} submitted the review for order #${displayId} — invoice created`,
-    orderMeta,
-  );
-  const invoiceMessages = withActorMessages(
-    restaurantActor,
-    `You submitted the review for order #${displayId} — invoice created`,
-    `Invoice created for order #${displayId} after ${restaurantActor.name} submitted the review`,
     { ...orderMeta, ...extra },
   );
-  await Promise.all([
-    logPortalActivity({
-      action: "order_review_submitted",
-      entityType: "order",
-      entityId: order.id,
-      entityName: reviewMessages.entityName,
-      vendorId: order.vendorId,
-      restaurantId: order.restaurantOrgId,
-      metadata: reviewMessages.metadata,
-    }),
-    logPortalActivity({
-      action: "order_invoiced",
-      entityType: "order",
-      entityId: order.id,
-      entityName: invoiceMessages.entityName,
-      vendorId: order.vendorId,
-      restaurantId: order.restaurantOrgId,
-      metadata: invoiceMessages.metadata,
-    }),
-  ]);
+  await logPortalActivity({
+    action: "order_review_submitted",
+    entityType: "order",
+    entityId: order.id,
+    entityName: reviewMessages.entityName,
+    vendorId: order.vendorId,
+    restaurantId: order.restaurantOrgId,
+    metadata: reviewMessages.metadata,
+  });
 }
 
 
