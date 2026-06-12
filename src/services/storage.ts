@@ -12,6 +12,7 @@ import {
   type Invoice, type InvoiceLineItemSnapshot, invoices,
   orderSubstitutions,
   type ActivityLog, type ActivityAction, type ActivityEntityType, activityLogs,
+  type ContactSubmission, type InsertContactSubmission, contactSubmissions,
   type Attachment, type AttachmentMeta, attachments,
   type InternalNote, type InsertInternalNote, internalNotes,
   type OrderSheetItem, orderSheetItems,
@@ -142,6 +143,9 @@ export interface IStorage {
   createActivityLog(entry: { action: ActivityAction; entityType: ActivityEntityType; entityId: string; entityName: string; metadata?: string; vendorId?: number; restaurantId?: number; }): Promise<ActivityLog>;
   getActivityLogs(limit?: number): Promise<ActivityLog[]>;
   getActivityLogsByAction(action: ActivityAction, limit: number): Promise<ActivityLog[]>;
+
+  createContactSubmission(submission: InsertContactSubmission): Promise<ContactSubmission>;
+  getContactSubmission(id: string): Promise<ContactSubmission | undefined>;
 
   getAttachments(entityType: string, entityId: string): Promise<AttachmentMeta[]>;
   getAttachment(id: string): Promise<Attachment | undefined>;
@@ -928,6 +932,25 @@ export class DatabaseStorage implements IStorage {
       .where(eq(activityLogs.action, action))
       .orderBy(desc(activityLogs.createdAt))
       .limit(limit);
+  }
+
+  async createContactSubmission(submission: InsertContactSubmission): Promise<ContactSubmission> {
+    const id = newId();
+    await db.insert(contactSubmissions).values({
+      id,
+      name: submission.name,
+      email: submission.email,
+      message: submission.message,
+      status: "new",
+    });
+    const [row] = await db.select().from(contactSubmissions).where(eq(contactSubmissions.id, id));
+    if (!row) throw new Error("Contact submission insert failed");
+    return row;
+  }
+
+  async getContactSubmission(id: string): Promise<ContactSubmission | undefined> {
+    const [row] = await db.select().from(contactSubmissions).where(eq(contactSubmissions.id, id));
+    return row;
   }
 
   async getAttachments(entityType: string, entityId: string): Promise<AttachmentMeta[]> {

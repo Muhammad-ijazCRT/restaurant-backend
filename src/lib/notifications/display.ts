@@ -106,6 +106,10 @@ export function resolveNotificationDisplayTitle(
     if (role === "super_admin") return profileTitles.audit;
   }
 
+  if (log.action === "contact_submitted" && role === "super_admin") {
+    return "New contact inquiry";
+  }
+
   return undefined;
 }
 

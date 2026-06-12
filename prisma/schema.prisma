@@ -264,6 +264,17 @@ model OrderSheetItem {
   @@map("order_sheet_items")
 }
 
+model ContactSubmission {
+  id        String   @id @db.VarChar(36)
+  name      String   @db.Text
+  email     String   @db.Text
+  message   String   @db.Text
+  status    String   @default("new") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("contact_submissions")
+}
+
 model ActivityLog {
   id           String   @id @db.VarChar(36)
   action       String   @db.Text

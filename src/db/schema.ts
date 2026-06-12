@@ -64,6 +64,28 @@ export const activityLogs = pgTable("activity_logs", {
 
 export type ActivityLog = typeof activityLogs.$inferSelect;
 
+export const contactSubmissions = pgTable("contact_submissions", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("new"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertContactSubmissionSchema = createInsertSchema(contactSubmissions).omit({
+  id: true,
+  status: true,
+  createdAt: true,
+}).extend({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  email: z.string().trim().email("Valid email is required").max(255),
+  message: z.string().trim().min(1, "Message is required").max(5000),
+});
+
+export type InsertContactSubmission = z.infer<typeof insertContactSubmissionSchema>;
+export type ContactSubmission = typeof contactSubmissions.$inferSelect;
+
 export const notificationClearances = pgTable("notification_clearances", {
   viewerKey: varchar("viewer_key", { length: 128 }).primaryKey(),
   clearedAt: timestamp("cleared_at").notNull(),

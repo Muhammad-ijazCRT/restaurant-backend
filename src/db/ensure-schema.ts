@@ -39,6 +39,19 @@ export async function ensureRestaurantEmployeesTable(): Promise<void> {
   }
 }
 
+export async function ensureContactSubmissionsTable(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS contact_submissions (
+      id VARCHAR(36) NOT NULL PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
 export async function ensureVendorEmployeePermissionColumns(): Promise<void> {
   try {
     await db.execute(sql`ALTER TABLE vendor_employees ADD COLUMN extra_permissions JSONB NULL`);

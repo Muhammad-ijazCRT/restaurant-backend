@@ -1,6 +1,6 @@
 import type { Server } from "http";
 import type { CompatExpressApp } from "../lib/express-compat.js";
-import { ensureNotificationClearancesTable, ensureRestaurantEmployeesTable, ensureVendorEmployeePermissionColumns } from "../db/ensure-schema.js";
+import { ensureNotificationClearancesTable, ensureRestaurantEmployeesTable, ensureVendorEmployeePermissionColumns, ensureContactSubmissionsTable } from "../db/ensure-schema.js";
 import { storage } from "../services/storage.js";
 import { registerHealthRoutes } from "./shared/health.js";
 import { registerAuthRoutes } from "./shared/auth.js";
@@ -20,6 +20,7 @@ import { registerOrderSheetRoutes } from "./shared/order-sheet.js";
 import { registerAdminOrderRoutes } from "./admin/orders.js";
 import { registerAdminRelationshipOrderRoutes } from "./admin/relationship-orders.js";
 import { registerAdminDashboardRoutes } from "./admin/dashboard.js";
+import { registerContactRoutes } from "./shared/contact.js";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -29,6 +30,7 @@ export async function registerRoutes(
     await ensureNotificationClearancesTable();
     await ensureRestaurantEmployeesTable();
     await ensureVendorEmployeePermissionColumns();
+    await ensureContactSubmissionsTable();
   } catch (err) {
     console.error("[startup] Failed to ensure notification_clearances table:", err);
   }
@@ -43,6 +45,7 @@ export async function registerRoutes(
   registerHealthRoutes(app);
   registerAuthRoutes(app);
   registerProfileRoutes(app);
+  registerContactRoutes(app);
   registerVendorRoutes(app);
   registerVendorEmployeeRoutes(app);
   registerVendorProductOrderRoutes(app);

@@ -279,8 +279,13 @@ export function registerProfileRoutes(app: CompatExpressApp) {
       );
 
       if (role === "super_admin") {
-        logs = [];
-        total = 0;
+        logs = await db
+          .select()
+          .from(activityLogs)
+          .where(eq(activityLogs.action, "contact_submitted"))
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(200);
+        total = logs.length;
       } else if (isRestaurantPortalRole(role)) {
         const restaurantOrgId = await resolveSessionRestaurantId(role, userId);
         if (!restaurantOrgId) {
