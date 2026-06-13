@@ -24,7 +24,61 @@ import {
   getRestaurantEmployeeLoginRole,
   normalizeEmployeeRoleList as normalizeRestaurantEmployeeRoles,
 } from "../../lib/permissions/restaurant-employee.js";
+import { requestPasswordReset, resetPasswordWithToken } from "../../lib/auth/password-reset.js";
 import type { CompatExpressApp, CompatRequest, CompatResponse } from "../../lib/express-compat.js";
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    confirmPassword: z.string().min(1),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+function parseForgotPasswordBody(req: CompatRequest, res: CompatResponse) {
+  try {
+    const body = forgotPasswordSchema.parse(req.body);
+    return { email: normalizeLoginEmail(body.email) };
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(422).json({
+        status: "error",
+        message: "Validation failed.",
+        errors: fromZodError(error).message,
+      });
+      return null;
+    }
+    res.status(400).json({ status: "error", message: "Invalid request body." });
+    return null;
+  }
+}
+
+function parseResetPasswordBody(req: CompatRequest, res: CompatResponse) {
+  try {
+    return resetPasswordSchema.parse(req.body);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(422).json({
+        status: "error",
+        message: "Validation failed.",
+        errors: fromZodError(error).message,
+      });
+      return null;
+    }
+    res.status(400).json({ status: "error", message: "Invalid request body." });
+    return null;
+  }
+}
+
+const forgotPasswordSuccessMessage =
+  "If an account exists with that email, password reset instructions have been sent.";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -594,6 +648,90 @@ export function registerAuthRoutes(app: CompatExpressApp): void {
       return res.status(500).json({
         status: "error",
         message: "Registration failed. Please try again.",
+      });
+    }
+  });
+
+  app.post("/api/restaurant/forgot-password", async (req, res) => {
+    const body = parseForgotPasswordBody(req, res);
+    if (!body) return;
+
+    try {
+      await requestPasswordReset("restaurant", body.email);
+      return res.json({ status: "success", message: forgotPasswordSuccessMessage });
+    } catch (error) {
+      console.error("[restaurant/forgot-password]", error);
+      return res.status(500).json({
+        status: "error",
+        message: "Could not process your request. Please try again.",
+      });
+    }
+  });
+
+  app.post("/api/restaurant/reset-password", async (req, res) => {
+    const body = parseResetPasswordBody(req, res);
+    if (!body) return;
+
+    try {
+      const updated = await resetPasswordWithToken("restaurant", body.token, body.password);
+      if (!updated) {
+        return res.status(400).json({
+          status: "error",
+          message: "This reset link is invalid or has expired.",
+        });
+      }
+
+      return res.json({
+        status: "success",
+        message: "Your password has been updated. You can now sign in.",
+      });
+    } catch (error) {
+      console.error("[restaurant/reset-password]", error);
+      return res.status(500).json({
+        status: "error",
+        message: "Could not reset your password. Please try again.",
+      });
+    }
+  });
+
+  app.post("/api/vendor/forgot-password", async (req, res) => {
+    const body = parseForgotPasswordBody(req, res);
+    if (!body) return;
+
+    try {
+      await requestPasswordReset("vendor", body.email);
+      return res.json({ status: "success", message: forgotPasswordSuccessMessage });
+    } catch (error) {
+      console.error("[vendor/forgot-password]", error);
+      return res.status(500).json({
+        status: "error",
+        message: "Could not process your request. Please try again.",
+      });
+    }
+  });
+
+  app.post("/api/vendor/reset-password", async (req, res) => {
+    const body = parseResetPasswordBody(req, res);
+    if (!body) return;
+
+    try {
+      const updated = await resetPasswordWithToken("vendor", body.token, body.password);
+      if (!updated) {
+        return res.status(400).json({
+          status: "error",
+          message: "This reset link is invalid or has expired.",
+        });
+      }
+
+      return res.json({
+        status: "success",
+        message: "Your password has been updated. You can now sign in.",
+      });
+    } catch (error) {
+      console.error("[vendor/reset-password]", error);
+      return res.status(500).json({
+        status: "error",
+        message: "Could not reset your password. Please try again.",
       });
     }
   });

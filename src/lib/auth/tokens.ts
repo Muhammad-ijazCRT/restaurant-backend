@@ -8,6 +8,14 @@ export interface AuthSession {
   vendorId?: string;
 }
 
+export interface PasswordResetTokenPayload {
+  purpose: "password_reset";
+  portal: "restaurant" | "vendor";
+  accountType: "restaurant_org" | "restaurant_employee" | "vendor" | "vendor_employee";
+  userId: string;
+  email: string;
+}
+
 let fastifyInstance: FastifyInstance | null = null;
 
 export function initAuthTokens(fastify: FastifyInstance): void {
@@ -46,4 +54,29 @@ export function updateAuthSession(
 
 export function signUpdatedSession(session: AuthSession): string {
   return createAuthToken(session);
+}
+
+export function createPasswordResetToken(
+  payload: Omit<PasswordResetTokenPayload, "purpose">,
+): string {
+  if (!fastifyInstance) {
+    throw new Error("Auth tokens not initialized. Call initAuthTokens first.");
+  }
+  return fastifyInstance.jwt.sign(
+    { ...payload, purpose: "password_reset" },
+    { expiresIn: "1h" },
+  );
+}
+
+export function verifyPasswordResetToken(
+  token: string,
+): PasswordResetTokenPayload | null {
+  if (!fastifyInstance) return null;
+  try {
+    const payload = fastifyInstance.jwt.verify<PasswordResetTokenPayload>(token);
+    if (payload.purpose !== "password_reset") return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }

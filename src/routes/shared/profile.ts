@@ -23,8 +23,11 @@ import {
 } from "../../lib/notifications/filters.js";
 import { enrichNotificationsForViewer } from "../../lib/notifications/display.js";
 import { buildProfileUpdateMetadata } from "../../lib/activity/session-messages.js";
+import { hashPassword, verifyPassword } from "../../lib/auth/password.js";
 import { getAuthSession } from "../../lib/auth/tokens.js";
 import { storage } from "../../services/storage.js";
+import { z, ZodError } from "zod";
+import { fromZodError } from "zod-validation-error";
 import fs from "fs";
 import path from "path";
 import { newId, updateOneById } from "../../db/helpers.js";
@@ -58,19 +61,148 @@ function buildProfilePatch(body: {
   email?: string;
   phone?: string | null;
   image?: string | null;
+  contactName?: string;
+  restaurantType?: string | null;
+  vendorType?: string | null;
+  address?: string | null;
+  aboutRestaurant?: string | null;
+  aboutVendor?: string | null;
+  openingHours?: string | null;
+  operatingHours?: string | null;
 }) {
   const updateData: Record<string, unknown> = {};
-  const { name, email, phone, image } = body;
+  const {
+    name,
+    email,
+    phone,
+    image,
+    contactName,
+    restaurantType,
+    vendorType,
+    address,
+    aboutRestaurant,
+    aboutVendor,
+    openingHours,
+    operatingHours,
+  } = body;
 
   if (name !== undefined && name !== "") updateData.name = name;
   if (email !== undefined && email !== "") updateData.email = email;
   if (phone !== undefined) updateData.phone = phone === "" ? null : phone;
+  if (contactName !== undefined && contactName !== "") updateData.contactName = contactName;
+  if (restaurantType !== undefined) updateData.restaurantType = restaurantType === "" ? null : restaurantType;
+  if (vendorType !== undefined) updateData.vendorType = vendorType === "" ? null : vendorType;
+  if (address !== undefined) updateData.address = address === "" ? null : address;
+  if (aboutRestaurant !== undefined) updateData.aboutRestaurant = aboutRestaurant === "" ? null : aboutRestaurant;
+  if (aboutVendor !== undefined) updateData.aboutVendor = aboutVendor === "" ? null : aboutVendor;
+  if (openingHours !== undefined) updateData.openingHours = openingHours === "" ? null : openingHours;
+  if (operatingHours !== undefined) updateData.operatingHours = operatingHours === "" ? null : operatingHours;
   if (image) {
     const savedImagePath = processImageUpload(image);
     if (savedImagePath) updateData.image = savedImagePath;
   }
 
   return updateData;
+}
+
+function buildRestaurantProfileResponse(r: typeof restaurantOrganizations.$inferSelect, role: string) {
+  return {
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    image: r.image,
+    role,
+    restaurantType: r.restaurantType ?? null,
+    address: r.address ?? null,
+    aboutRestaurant: r.aboutRestaurant ?? null,
+    openingHours: r.openingHours ?? null,
+  };
+}
+
+function buildVendorProfileResponse(v: typeof vendors.$inferSelect, role: string) {
+  return {
+    name: v.name,
+    email: v.email,
+    phone: v.phone,
+    image: v.image,
+    role,
+    contactName: v.contactName,
+    vendorType: v.vendorType ?? null,
+    address: v.address ?? null,
+    aboutVendor: v.aboutVendor ?? null,
+    operatingHours: v.operatingHours ?? null,
+  };
+}
+
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+    confirmPassword: z.string().min(1, "Please confirm your new password"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+async function getStoredPasswordHash(role: string, userId: string): Promise<string | null> {
+  if (role === "super_admin") {
+    const [user] = await db.select({ password: users.password }).from(users).where(eq(users.id, userId)).limit(1);
+    return user?.password ?? null;
+  }
+  if (role === "restaurant") {
+    const [org] = await db
+      .select({ loginPassword: restaurantOrganizations.loginPassword })
+      .from(restaurantOrganizations)
+      .where(eq(restaurantOrganizations.id, userId))
+      .limit(1);
+    return org?.loginPassword ?? null;
+  }
+  if (role === "vendor_admin") {
+    const [vendor] = await db
+      .select({ loginPassword: vendors.loginPassword })
+      .from(vendors)
+      .where(eq(vendors.id, userId))
+      .limit(1);
+    return vendor?.loginPassword ?? null;
+  }
+  if (role === "restaurant_manager" || role === "restaurant_employee") {
+    const [employee] = await db
+      .select({ loginPassword: restaurantEmployees.loginPassword })
+      .from(restaurantEmployees)
+      .where(eq(restaurantEmployees.id, userId))
+      .limit(1);
+    return employee?.loginPassword ?? null;
+  }
+
+  const [employee] = await db
+    .select({ loginPassword: vendorEmployees.loginPassword })
+    .from(vendorEmployees)
+    .where(eq(vendorEmployees.id, userId))
+    .limit(1);
+  return employee?.loginPassword ?? null;
+}
+
+async function updateStoredPasswordHash(role: string, userId: string, hashedPassword: string): Promise<boolean> {
+  if (role === "super_admin") {
+    await updateOneById(db, users, userId, { password: hashedPassword });
+    return true;
+  }
+  if (role === "restaurant") {
+    await updateOneById(db, restaurantOrganizations, userId, { loginPassword: hashedPassword });
+    return true;
+  }
+  if (role === "vendor_admin") {
+    await updateOneById(db, vendors, userId, { loginPassword: hashedPassword });
+    return true;
+  }
+  if (role === "restaurant_manager" || role === "restaurant_employee") {
+    await updateOneById(db, restaurantEmployees, userId, { loginPassword: hashedPassword });
+    return true;
+  }
+
+  await updateOneById(db, vendorEmployees, userId, { loginPassword: hashedPassword });
+  return true;
 }
 
 async function loadUserProfile(role: string, userId: string) {
@@ -82,12 +214,12 @@ async function loadUserProfile(role: string, userId: string) {
   if (role === "restaurant") {
     const [r] = await db.select().from(restaurantOrganizations).where(eq(restaurantOrganizations.id, userId));
     if (!r) return null;
-    return { name: r.name, email: r.email, phone: r.phone, image: r.image, role };
+    return buildRestaurantProfileResponse(r, role);
   }
   if (role === "vendor_admin") {
     const [v] = await db.select().from(vendors).where(eq(vendors.id, userId));
     if (!v) return null;
-    return { name: v.name, email: v.email, phone: v.phone, image: v.image, role };
+    return buildVendorProfileResponse(v, role);
   }
   if (role === "restaurant_manager" || role === "restaurant_employee") {
     const [e] = await db.select().from(restaurantEmployees).where(eq(restaurantEmployees.id, userId));
@@ -122,9 +254,51 @@ export function registerProfileRoutes(app: CompatExpressApp) {
     }
   });
 
+  app.put("/api/profile/password", requireAuth, async (req: any, res: any) => {
+    const { role, userId, name: sessionName } = req.session;
+
+    try {
+      const body = changePasswordSchema.parse(req.body);
+      const storedHash = await getStoredPasswordHash(role, userId);
+
+      if (!storedHash || !verifyPassword(body.currentPassword, storedHash)) {
+        return res.status(400).json({ message: "Current password is incorrect." });
+      }
+
+      if (verifyPassword(body.newPassword, storedHash)) {
+        return res.status(400).json({ message: "New password must be different from your current password." });
+      }
+
+      await updateStoredPasswordHash(role, userId, hashPassword(body.newPassword));
+
+      const actor = { id: userId, name: String(sessionName ?? "User"), role: normalizeNotificationRole(role) };
+      const profileMeta = buildProfileUpdateMetadata(actor, "Password");
+      storage
+        .createActivityLog({
+          action: "password_changed",
+          entityType: role === "super_admin" ? "user" : role === "restaurant" ? "restaurant_org" : role === "vendor_admin" ? "vendor" : role.startsWith("restaurant_") ? "restaurant_employee" : "vendor_employee",
+          entityId: userId,
+          entityName: profileMeta.othersMessage as string,
+          metadata: JSON.stringify(profileMeta),
+        })
+        .catch(console.error);
+
+      res.json({ message: "Password updated successfully." });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(422).json({
+          message: "Validation failed.",
+          errors: fromZodError(error).message,
+        });
+      }
+      console.error(error);
+      res.status(500).json({ message: "Failed to update password." });
+    }
+  });
+
   app.put("/api/profile", requireAuth, async (req: any, res: any) => {
     const { role, userId, name: sessionName } = req.session;
-    const { name, email, phone, image } = req.body;
+    const { name, email, phone, image, restaurantType, address, aboutRestaurant, openingHours, contactName, vendorType, aboutVendor, operatingHours } = req.body;
     const normalizedRole = normalizeNotificationRole(role);
 
     try {
@@ -151,7 +325,16 @@ export function registerProfileRoutes(app: CompatExpressApp) {
           metadata: JSON.stringify(profileMeta),
         }).catch(console.error);
       } else if (role === "restaurant") {
-        const updateData = buildProfilePatch({ name, email, phone, image });
+        const updateData = buildProfilePatch({
+          name,
+          email,
+          phone,
+          image,
+          restaurantType,
+          address,
+          aboutRestaurant,
+          openingHours,
+        });
         if (Object.keys(updateData).length > 0) {
           await updateOneById(db, restaurantOrganizations, userId, updateData);
         }
@@ -165,7 +348,17 @@ export function registerProfileRoutes(app: CompatExpressApp) {
           metadata: JSON.stringify(profileMeta),
         }).catch(console.error);
       } else if (role === "vendor_admin") {
-        const updateData = buildProfilePatch({ name, email, phone, image });
+        const updateData = buildProfilePatch({
+          name,
+          email,
+          phone,
+          image,
+          contactName,
+          vendorType,
+          address,
+          aboutVendor,
+          operatingHours,
+        });
         if (Object.keys(updateData).length > 0) {
           await updateOneById(db, vendors, userId, updateData);
         }

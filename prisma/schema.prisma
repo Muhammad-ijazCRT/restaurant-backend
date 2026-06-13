@@ -19,15 +19,19 @@ model User {
 }
 
 model Vendor {
-  id            String   @id @db.VarChar(36)
-  name          String   @db.Text
-  contactName   String   @map("contact_name") @db.Text
-  email         String   @db.Text
-  loginPassword String?  @map("login_password") @db.Text
-  phone         String   @db.Text
-  status        String   @default("active") @db.Text
-  image         String?  @db.Text
-  createdAt     DateTime @default(now()) @map("created_at")
+  id              String   @id @db.VarChar(36)
+  name            String   @db.Text
+  contactName     String   @map("contact_name") @db.Text
+  email           String   @db.Text
+  loginPassword   String?  @map("login_password") @db.Text
+  phone           String   @db.Text
+  vendorType      String?  @map("vendor_type") @db.Text
+  address         String?  @db.Text
+  aboutVendor     String?  @map("about_vendor") @db.Text
+  operatingHours  String?  @map("operating_hours") @db.Text
+  status          String   @default("active") @db.Text
+  image           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
 
   employees         VendorEmployee[]
   cutoffSettings    VendorCutoffSettings?
@@ -73,15 +77,19 @@ model VendorCutoffSettings {
 }
 
 model RestaurantOrganization {
-  id            String   @id @db.VarChar(36)
-  name          String   @db.Text
-  contactName   String   @map("contact_name") @db.Text
-  email         String   @db.Text
-  loginPassword String?  @map("login_password") @db.Text
-  phone         String   @db.Text
-  status        String   @default("active") @db.Text
-  image         String?  @db.Text
-  createdAt     DateTime @default(now()) @map("created_at")
+  id              String   @id @db.VarChar(36)
+  name            String   @db.Text
+  contactName     String   @map("contact_name") @db.Text
+  email           String   @db.Text
+  loginPassword   String?  @map("login_password") @db.Text
+  phone           String   @db.Text
+  restaurantType  String?  @map("restaurant_type") @db.Text
+  address         String?  @db.Text
+  aboutRestaurant String?  @map("about_restaurant") @db.Text
+  openingHours    String?  @map("opening_hours") @db.Text
+  status          String   @default("active") @db.Text
+  image           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
 
   employees     RestaurantEmployee[]
   orders        Order[]
